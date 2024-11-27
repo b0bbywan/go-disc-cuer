@@ -127,16 +127,16 @@ func generate(device string, cuerConfig *config.Config, providedDiscID, musicbra
 	}
 	var mbToc string
 	if mbToc, err = utils.GetMusicBrainzTOC(disc); err != nil {
-		return "", err
+		return "", fmt.Errorf("Failed to get musicbrainz TOC: %w", err)
 	}
 
 	if err = utils.CreateFolderIfNeeded(cueFilePath); err != nil {
-		return "", err
+		return "", fmt.Errorf("Failed to create %s folder: %w", cueFilePath, err)
 	}
 
 	// Fetch DiscInfo concurrently
 	if discInfo, err = fetchDiscInfoConcurrently(cuerConfig, gnuToc, mbToc); err != nil {
-		return "", err
+		return "", fmt.Errorf("Failed to get disc metadata: %w", err)
 	}
 
 	return finalizeIfSuccess(discInfo, cacheLocation, cueFilePath)
@@ -153,7 +153,7 @@ func fetchDiscInfoFromFlags(musicbrainzID, providedDiscID string) (*types.DiscIn
 	if musicbrainzID != "" {
 		discInfo, err := musicbrainz.FetchReleaseByID(musicbrainzID)
 		if err != nil {
-			return nil, "", err
+			return nil, "", fmt.Errorf("Failed to get MusicBrainz %s Release: %w", musicbrainzID, err)
 		}
 		return discInfo, providedDiscID, nil
 	}
@@ -176,7 +176,7 @@ func finalizeIfSuccess(discInfo *types.DiscInfo, cacheLocation, cueFilePath stri
     }
 	// Generate the CUE file and save
 	if err := generateCueFile(discInfo, cacheLocation, cueFilePath); err != nil {
-		return "", err
+		return "", fmt.Errorf("Failed To Generate cue file %s: %w", cueFilePath, err)
 	}
 	log.Printf("info: Playlist generated at %s", cueFilePath)
 	return cueFilePath, nil
@@ -194,7 +194,7 @@ func finalizeIfSuccess(discInfo *types.DiscInfo, cacheLocation, cueFilePath stri
 func generateCueFile(info *types.DiscInfo, cacheLocation, cueFilePath string) error {
 	file, err := os.Create(cueFilePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to create cue file %s: %w", cueFilePath, err)
 	}
 	defer file.Close()
 
