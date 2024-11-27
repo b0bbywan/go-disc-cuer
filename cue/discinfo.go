@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/b0bbywan/go-disc-cuer/config"
 	"github.com/b0bbywan/go-disc-cuer/gnudb"
 	"github.com/b0bbywan/go-disc-cuer/musicbrainz"
 	"github.com/b0bbywan/go-disc-cuer/types"
@@ -30,9 +31,9 @@ const (
 //
 // Returns:
 //   - error: An error if the cover art cannot be fetched or saved; nil otherwise.
-func fetchCoverArtIfNeeded(discInfo *types.DiscInfo, cueFilePath string) error {
+func fetchCoverArtIfNeeded(discInfo *types.DiscInfo, cacheLocation, cueFilePath string) error {
     if discInfo.CoverArtPath == "" {
-        coverFilePath := utils.CacheCoverArtPath(filepath.Base(filepath.Dir(cueFilePath)))
+        coverFilePath := utils.CacheCoverArtPath(cacheLocation, filepath.Base(filepath.Dir(cueFilePath)))
         if err := fetchCoverArt(discInfo.ID, coverFilePath); err == nil {
             discInfo.CoverArtPath = coverFilePath
         } else {
@@ -84,7 +85,10 @@ func fetchCoverArt(mbID, coverFile string) error {
 //   - *types.DiscInfo: Consolidated metadata about the disc, prioritizing GNUDB data when available.
 //   - error: An error if both sources fail to provide valid data; nil otherwise.
 // Function to fetch disc info from both services using goroutines and WaitGroup
-func fetchDiscInfoConcurrently(gnuToc, mbToc string) (*types.DiscInfo, error) {
+func fetchDiscInfoConcurrently(cuerConfig *config.Config, gnuToc, mbToc string) (*types.DiscInfo, error) {
+	if cuerConfig == nil {
+		return nil, fmt.Errorf("Failed to fetch disc info: empty config")
+	}
 	var wg sync.WaitGroup
 	var gndbDiscInfo, mbDiscInfo *types.DiscInfo
 	var gndbErr, mbErr error
@@ -96,7 +100,7 @@ func fetchDiscInfoConcurrently(gnuToc, mbToc string) (*types.DiscInfo, error) {
 	// Fetch from GNUDB
 	go func() {
 		defer wg.Done()
-		gndbDiscInfo, gndbErr = gnudb.FetchDiscInfo(formattedGnuTOC)
+		gndbDiscInfo, gndbErr = gnudb.FetchDiscInfo(cuerConfig, formattedGnuTOC)
 	}()
 
 	// Fetch from MusicBrainz
