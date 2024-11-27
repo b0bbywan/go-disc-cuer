@@ -2,7 +2,6 @@ package gnudb
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,44 +20,60 @@ const (
 	keyTrack = "TTITLE"
 )
 
-var (
-	gnuHello string
-	gnudbURL string
-)
+type gnuConfig struct {
+	GnuHello string
+	GnudbURL string
+}
 
-func init() {
+// newGnuConfig initializes the GNUDB configuration based on the provided application configuration.
+//
+// Parameters:
+//   - cuerConfig: The Config instance containing application settings.
+//
+// Returns:
+//   - *gnuConfig: A GNUDB-specific configuration instance.
+//   - error: Any error encountered during initialization.
+func newGnuConfig(cuerConfig *config.Config) (*gnuConfig, error) {
+	if cuerConfig.GnuHelloEmail == "" {
+		return nil, fmt.Errorf("gnuHelloEmail is required in config.yaml or via environment variable to use gnuDB")
+	}
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = "unknown-host"
 	}
-	gnuHello = fmt.Sprintf("%s+%s+%s+%s", config.GnuHelloEmail, hostname, config.AppName, config.AppVersion)
-	gnudbURL = fmt.Sprintf("%s/~cddb/cddb.cgi", config.GnuDbUrl)
+	gnuHello := fmt.Sprintf("%s+%s+%s+%s", cuerConfig.GnuHelloEmail, hostname, cuerConfig.AppName, cuerConfig.AppVersion)
+	gnudbURL := fmt.Sprintf("%s/~cddb/cddb.cgi", cuerConfig.GnuDbUrl)
+	return &gnuConfig{
+		GnuHello: gnuHello,
+		GnudbURL: gnudbURL,
+	}, nil
 }
 
-// FetchDiscInfo queries GNUDB to retrieve disc metadata based on the disc's table of contents (TOC).
+// FetchDiscInfo queries GNUDB to retrieve metadata about a disc.
 //
 // Parameters:
-//   - gnuToc (string): The disc's TOC, formatted for GNUDB queries.
+//   - cuerConfig: The Config instance containing GNUDB settings.
+//   - gnuToc: The table of contents (TOC) of the disc.
 //
 // Returns:
-//   - *types.DiscInfo: A struct containing the disc's metadata (artist, title, tracks, etc.).
-//   - error: An error if the query or data retrieval fails, or if `gnuHelloEmail` is not configured.
-func FetchDiscInfo(gnuToc string) (*types.DiscInfo, error) {
+//   - *types.DiscInfo: Metadata about the disc.
+//   - error: Any error encountered during the operation.
+func FetchDiscInfo(cuerConfig *config.Config, gnuToc string) (*types.DiscInfo, error) {
+	gnuConfig, err := newGnuConfig(cuerConfig)
+	if err != nil {
+		return nil, fmt.Errorf("Invalid GNUConfig: %w", err)
+	}
 	client := &http.Client{}
 
-	if config.GnuHelloEmail == "" {
-		return nil, fmt.Errorf("gnuHelloEmail is required in config.yaml or via environment variable to use gnuDB")
-	}
-
 	// First, query GNUDB for a match
-	gnudbID, err := queryGNUDB(client, gnuToc)
+	gnudbID, err := queryGNUDB(client, gnuConfig, gnuToc)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to query %s on gnuDB: %w", gnuToc, err)
 	}
 	// Fetch the full metadata from GNDB
-	discInfo, err := fetchFullMetadata(client, gnudbID)
+	discInfo, err := fetchFullMetadata(client, gnuConfig, gnudbID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to fetch %s (%s) metadata on gnuDB: %w", gnudbID, gnuToc, err)
 	}
 
 	return discInfo, nil
@@ -73,20 +88,23 @@ func FetchDiscInfo(gnuToc string) (*types.DiscInfo, error) {
 // Returns:
 //   - string: The GNUDB ID of the matching record.
 //   - error: An error if the query fails, the response cannot be read, or no match is found.
-func queryGNUDB(client *http.Client, gnuToc string) (string, error) {
-	queryURL := fmt.Sprintf("%s?cmd=cddb+query+%s&hello=%s&proto=6", gnudbURL, gnuToc, gnuHello)
+func queryGNUDB(client *http.Client, gnuConfig *gnuConfig, gnuToc string) (string, error) {
+	if gnuConfig == nil {
+		return "", fmt.Errorf("Failed to query gnudb: empty config")
+	}
+	queryURL := fmt.Sprintf("%s?cmd=cddb+query+%s&hello=%s&proto=6", gnuConfig.GnudbURL, gnuToc, gnuConfig.GnuHello)
 	resp, err := makeGnuRequest(client, queryURL)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("Failed GnuRequest (%s): %w", queryURL, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %w", err)
+		return "", fmt.Errorf("Failed to read response body: %w", err)
 	}
 	if !strings.Contains(string(body), "Found exact matches") {
-		return "", errors.New("no exact match found in GNUDB")
+		return "", fmt.Errorf("No exact match found in GNUDB: %s", string(body))
 	}
 	return extractGnuDBID(string(body))
 }
@@ -102,7 +120,7 @@ func queryGNUDB(client *http.Client, gnuToc string) (string, error) {
 func extractGnuDBID(response string) (string, error) {
 	lines := strings.Split(response, "\n")
 	if len(lines) < 2 {
-		return "", errors.New("invalid GNUDB response format")
+		return "", fmt.Errorf("invalid GNUDB response format: %s", response)
 	}
 	return strings.Fields(lines[1])[1], nil
 }
@@ -116,11 +134,14 @@ func extractGnuDBID(response string) (string, error) {
 // Returns:
 //   - *types.DiscInfo: A struct containing the disc's metadata (artist, title, tracks, etc.).
 //   - error: An error if the metadata cannot be retrieved or parsed.
-func fetchFullMetadata(client *http.Client, gnudbID string) (*types.DiscInfo, error) {
-	readURL := fmt.Sprintf("%s?cmd=cddb+read+data+%s&hello=%s&proto=6", gnudbURL, gnudbID, gnuHello)
+func fetchFullMetadata(client *http.Client, gnuConfig *gnuConfig, gnudbID string) (*types.DiscInfo, error) {
+	if gnuConfig == nil {
+		return nil, fmt.Errorf("Failed to fetch gnudb metadata: empty config")
+	}
+	readURL := fmt.Sprintf("%s?cmd=cddb+read+data+%s&hello=%s&proto=6", gnuConfig.GnudbURL, gnudbID, gnuConfig.GnuHello)
 	resp, err := makeGnuRequest(client, readURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed GnuRequest (%s): %w", readURL, err)
 	}
 	defer resp.Body.Close()
 
@@ -159,11 +180,11 @@ func parseGNUDBResponse(body io.Reader) (*types.DiscInfo, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to scan body: %w", err)
 	}
 
 	if discInfo.Title == "" {
-		return nil, errors.New("error: no valid title in GNUDB data")
+		return nil, fmt.Errorf("error: no valid title in GNUDB data")
 	}
 
 	return discInfo, nil

@@ -1,66 +1,115 @@
 package config
 
 import (
-    "fmt"
-    "os"
-    "path/filepath"
-    "strings"
-    "github.com/spf13/viper"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/viper"
 )
 
 const (
-    AppName = "disc-cuer"
-    AppVersion = "0.2"
+	AppName = "disc-cuer"
+	AppVersion = "0.3"
 )
 
-var (
-    GnuHelloEmail string
-    GnuDbUrl      string
-    CacheLocation string
-    Device        string
-)
-
-func init() () {
-    // Set default values
-    viper.SetDefault("gnuHelloEmail", "")
-    viper.SetDefault("gnuDbUrl", "https://gnudb.gnudb.org")
-    viper.SetDefault("cacheLocation", getDefaultCacheFolder())
-    viper.SetDefault("device", "/dev/sr0")
-
-    // Load from configuration file, environment variables, and CLI flags
-    viper.SetConfigName("config")  // name of config file (without extension)
-    viper.SetConfigType("yaml")    // config file format
-    viper.AddConfigPath(filepath.Join("/etc", AppName))  // Global configuration path
-    if home, err := os.UserHomeDir(); err == nil {
-        viper.AddConfigPath(filepath.Join(home, ".config", AppName)) // User config path
-    }
-
-    // Environment variable support
-    viper.SetEnvPrefix(strings.ReplaceAll(AppName, "-", "_")) // environment variables start with CD_CUER
-    viper.AutomaticEnv()
-
-    // Load configuration from file if present
-    err := viper.ReadInConfig()
-    if err != nil {
-        // File not found is acceptable, only raise errors for other issues
-        if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-            fmt.Fprintf(os.Stderr, "Error reading config file: %v\n", err)
-            os.Exit(1)
-        }
-    }
-
-    if GnuHelloEmail = viper.GetString("gnuHelloEmail"); GnuHelloEmail == "" {
-        fmt.Fprintf(os.Stderr, "gnuHelloEmail is required in config.yaml or via environment variable to use gnuDB\n")
-    }
-    CacheLocation = viper.GetString("cacheLocation")
-    GnuDbUrl = viper.GetString("gnuDbUrl")
-    Device = viper.GetString("device")
+type Config struct {
+	AppName			string
+	AppVersion		string
+	GnuHelloEmail	string
+	GnuDbUrl		string
+	CacheLocation	string
+	Device			string
 }
 
-func getDefaultCacheFolder() string {
-    home, err := os.UserHomeDir()
-    if err != nil {
-        return filepath.Join("var", "cache", AppName)
-    }
-    return filepath.Join(home, ".cache", AppName)
+// NewDefaultConfig creates a Config struct with default application settings.
+// It is useful when no specific customization is required.
+//
+// Returns:
+//   - *Config: A configuration instance with default values.
+//   - error: Any error encountered during initialization.
+func NewDefaultConfig() (*Config, error) {
+	return NewConfig(AppName, AppVersion, "")
+}
+
+// NewConfig initializes the Config struct for the specified application with custom settings.
+//
+// Parameters:
+//   - appName: The name of the application. Defaults to the package-level AppName if empty.
+//   - appVersion: The version of the application. Defaults to the package-level AppVersion if empty.
+//   - baseCacheFolder: The base folder for caching. Uses system defaults if empty.
+//
+// Returns:
+//   - *Config: A configuration instance populated with the given settings.
+//   - error: Any error encountered during initialization.
+func NewConfig(appName, appVersion, baseCacheFolder string) (*Config, error) {
+	if appName == "" {
+		appName = AppName
+	}
+	if appVersion == "" {
+		appVersion = AppVersion
+	}
+	cacheLocation := getCacheFolder(baseCacheFolder, appName)
+	viper.SetDefault("cacheLocation", cacheLocation)
+	viper.SetDefault("gnuHelloEmail", "")
+	viper.SetDefault("gnuDbUrl", "https://gnudb.gnudb.org")
+	viper.SetDefault("device", "/dev/sr0")
+
+	// Load configuration paths and environment variables
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(filepath.Join("/etc", appName))
+	if home, err := os.UserHomeDir(); err == nil {
+		viper.AddConfigPath(filepath.Join(home, ".config", appName))
+	}
+	viper.SetEnvPrefix(strings.ToUpper(strings.ReplaceAll(appName, "-", "_")))
+	viper.AutomaticEnv()
+
+	// Attempt to read configuration file
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return nil, fmt.Errorf("error reading config file: %v", err)
+		}
+	}
+
+	// Populate the Config struct
+	config := &Config{
+		AppName:		appName,
+		AppVersion:		appVersion,
+		CacheLocation:	cacheLocation,
+		GnuHelloEmail:	viper.GetString("gnuHelloEmail"),
+		GnuDbUrl:		viper.GetString("gnuDbUrl"),
+		Device:			viper.GetString("device"),
+	}
+
+	// Validate required fields
+	if config.GnuHelloEmail == "" {
+		fmt.Fprintf(os.Stderr, "Warning: gnuHelloEmail is required for gnuDB operations.\n")
+	}
+
+	return config, nil
+}
+
+// GetCacheLocation retrieves the cache folder path for the current configuration.
+//
+// Returns:
+//   - string: The cache folder path.
+func (c *Config) GetCacheLocation() string {
+	return c.CacheLocation
+}
+
+func getCacheFolder(baseCacheFolder, appName string) string {
+	if baseCacheFolder == "" {
+		return getDefaultCacheFolder(appName)
+	}
+	return baseCacheFolder
+}
+
+func getDefaultCacheFolder(appName string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join("/var", "cache", appName)
+	}
+	return filepath.Join(home, ".cache", appName)
 }

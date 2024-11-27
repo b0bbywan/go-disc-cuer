@@ -40,8 +40,11 @@ func init() {
 // based on the provided MusicBrainz ID, disc ID, and overwrite flag.
 func main() {
 	flag.Parse()
-
-	if _, err := cue.GenerateWithOptions(config.Device, musicbrainzID, providedDiscID, overwrite); err != nil {
-		log.Fatalf("error: failed to generate playlist from both GNUDB and MusicBrainz: %v", err)
+	cuerConfig, err := config.NewDefaultConfig()
+	if err != nil {
+		log.Fatalf("error: Failed to initialize %s config: %v", config.AppName, err)
+	}
+	if _, err = cue.GenerateWithOptions(cuerConfig.Device, cuerConfig, musicbrainzID, providedDiscID, overwrite); err != nil {
+		log.Fatalf("error: Failed to generate playlist from both GNUDB and MusicBrainz: %v", err)
 	}
 }
