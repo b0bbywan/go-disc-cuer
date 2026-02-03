@@ -66,7 +66,7 @@ func main() {
 	device := getDevice(deviceFlag, cuerConfig)
 	logger.Debugf("Using device: %s", device)
 
-	if _, err = cue.GenerateWithOptions(device, cuerConfig, musicbrainzID, providedDiscID, overwrite); err != nil {
-		logger.Fatalf("Failed to generate playlist from both GNUDB and MusicBrainz: %v", err)
+	if _, err = cue.GenerateWithOptions(device, cuerConfig, providedDiscID, musicbrainzID, overwrite); err != nil {
+		logger.Fatalf("Failed to generate playlist: %v", err)
 	}
 }
