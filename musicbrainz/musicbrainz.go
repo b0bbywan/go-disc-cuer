@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/b0bbywan/go-disc-cuer/logger"
 	"github.com/b0bbywan/go-disc-cuer/types"
 )
 
@@ -23,10 +24,13 @@ const (
 //   - error: An error if the release data cannot be fetched or parsed.
 func FetchReleaseByID(releaseID string) (*types.DiscInfo, error) {
 	url := fmt.Sprintf("%s/release/%s?inc=artists+recordings&fmt=json", mbURL, releaseID)
+	logger.Debugf("Fetching MusicBrainz release by ID: %s", releaseID)
 	var release types.MBRelease
 	if err := fetchJSON(url, &release); err != nil {
+		logger.Errorf("Failed to fetch MusicBrainz release %s: %v", releaseID, err)
 		return nil, err
 	}
+	logger.Debugf("Successfully fetched MusicBrainz release: %s", release.Title)
 	return convertReleaseToDiscInfo(release)
 
 }
@@ -41,15 +45,19 @@ func FetchReleaseByID(releaseID string) (*types.DiscInfo, error) {
 //   - error: An error if no release data is found or if the request fails.
 func FetchReleaseByToc(mbToc string) (*types.DiscInfo, error) {
 	url := fmt.Sprintf("%s/discid/-?toc=%s&inc=artists+recordings&fmt=json", mbURL, mbToc)
+	logger.Debugf("Fetching MusicBrainz release by TOC: %s", mbToc)
 	var result types.ReleaseResult
 	if err := fetchJSON(url, &result); err != nil {
+		logger.Debugf("Failed to fetch MusicBrainz data by TOC: %v", err)
 		return nil, err
 	}
 
 	if len(result.Releases) == 0 {
+		logger.Debugf("No MusicBrainz releases found for TOC: %s", mbToc)
 		return nil, errors.New("no release data found")
 	}
 
+	logger.Debugf("Found %d MusicBrainz release(s), using the first one", len(result.Releases))
 	release := result.Releases[0]
 	return convertReleaseToDiscInfo(release)
 }
@@ -86,15 +94,19 @@ func convertReleaseToDiscInfo(release types.MBRelease) (*types.DiscInfo, error) 
 // Returns:
 //   - error: An error if the request fails or if the response cannot be parsed.
 func fetchJSON(url string, target interface{}) error {
+	logger.Debugf("Making HTTP request to: %s", url)
 	resp, err := http.Get(url)
 	if err != nil {
+		logger.Debugf("HTTP request failed: %v", err)
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		logger.Debugf("HTTP request returned status code: %d", resp.StatusCode)
 		return fmt.Errorf("error: failed to fetch from URL %s, status code: %d", url, resp.StatusCode)
 	}
 
+	logger.Debugf("Successfully received response, decoding JSON...")
 	return json.NewDecoder(resp.Body).Decode(target)
 }

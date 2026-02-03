@@ -21,6 +21,7 @@ type Config struct {
 	GnuDbUrl      string
 	CacheLocation string
 	Device        string
+	LogLevel      string
 }
 
 // NewDefaultConfig creates a Config struct with default application settings.
@@ -55,6 +56,7 @@ func NewConfig(appName, appVersion, baseCacheFolder string) (*Config, error) {
 	viper.SetDefault("gnuHelloEmail", "")
 	viper.SetDefault("gnuDbUrl", "https://gnudb.gnudb.org")
 	viper.SetDefault("device", "/dev/sr0")
+	viper.SetDefault("logLevel", "info")
 
 	// Load configuration paths and environment variables
 	viper.SetConfigName("config")
@@ -81,6 +83,7 @@ func NewConfig(appName, appVersion, baseCacheFolder string) (*Config, error) {
 		GnuHelloEmail: viper.GetString("gnuHelloEmail"),
 		GnuDbUrl:      viper.GetString("gnuDbUrl"),
 		Device:        viper.GetString("device"),
+		LogLevel:      viper.GetString("logLevel"),
 	}
 
 	// Validate required fields

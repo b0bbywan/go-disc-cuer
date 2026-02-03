@@ -1,9 +1,10 @@
 package utils
 
 import (
-	"log"
 	"os"
 	"path/filepath"
+
+	"github.com/b0bbywan/go-disc-cuer/logger"
 )
 
 // CheckIfPlaylistExists checks if a CUE playlist file already exists at the specified path.
@@ -15,10 +16,12 @@ import (
 //   - bool: True if the playlist file exists, false otherwise.
 //   - The function also logs an informational message if the file exists.
 func CheckIfPlaylistExists(cueFilePath string) bool {
+	logger.Debugf("Checking if playlist exists: %s", cueFilePath)
 	if _, err := os.Stat(cueFilePath); err == nil {
-		log.Printf("info: Playlist already exists at %s", cueFilePath)
+		logger.Debugf("Playlist file exists: %s", cueFilePath)
 		return true
 	}
+	logger.Debugf("Playlist file does not exist: %s", cueFilePath)
 	return false
 }
 
@@ -30,7 +33,15 @@ func CheckIfPlaylistExists(cueFilePath string) bool {
 // Returns:
 //   - error: Any error encountered during the folder creation process.
 func CreateFolderIfNeeded(cueFilePath string) error {
-	return os.MkdirAll(filepath.Dir(cueFilePath), os.ModePerm)
+	folderPath := filepath.Dir(cueFilePath)
+	logger.Debugf("Creating folder if needed: %s", folderPath)
+	err := os.MkdirAll(folderPath, os.ModePerm)
+	if err != nil {
+		logger.Errorf("Failed to create folder %s: %v", folderPath, err)
+	} else {
+		logger.Debugf("Folder ready: %s", folderPath)
+	}
+	return err
 }
 
 // CachePlaylistPath generates the file path where the playlist CUE file is cached based on the disc ID.

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/b0bbywan/go-disc-cuer/config"
+	"github.com/b0bbywan/go-disc-cuer/logger"
 	"github.com/b0bbywan/go-disc-cuer/types"
 )
 
@@ -59,22 +60,30 @@ func newGnuConfig(cuerConfig *config.Config) (*gnuConfig, error) {
 //   - *types.DiscInfo: Metadata about the disc.
 //   - error: Any error encountered during the operation.
 func FetchDiscInfo(cuerConfig *config.Config, gnuToc string) (*types.DiscInfo, error) {
+	logger.Debugf("Fetching disc info from GNUDB with TOC: %s", gnuToc)
 	gnuConfig, err := newGnuConfig(cuerConfig)
 	if err != nil {
+		logger.Errorf("Failed to initialize GNUDB config: %v", err)
 		return nil, fmt.Errorf("Invalid GNUConfig: %w", err)
 	}
+	logger.Debugf("GNUDB config initialized: %s", gnuConfig.GnuHello)
 	client := &http.Client{}
 
 	// First, query GNUDB for a match
 	gnudbID, err := queryGNUDB(client, gnuConfig, gnuToc)
 	if err != nil {
+		logger.Debugf("GNUDB query failed for TOC %s: %v", gnuToc, err)
 		return nil, fmt.Errorf("Failed to query %s on gnuDB: %w", gnuToc, err)
 	}
+	logger.Debugf("Found GNUDB ID: %s", gnudbID)
+
 	// Fetch the full metadata from GNDB
 	discInfo, err := fetchFullMetadata(client, gnuConfig, gnudbID)
 	if err != nil {
+		logger.Errorf("Failed to fetch GNUDB metadata for ID %s: %v", gnudbID, err)
 		return nil, fmt.Errorf("Failed to fetch %s (%s) metadata on gnuDB: %w", gnudbID, gnuToc, err)
 	}
+	logger.Infof("Successfully fetched GNUDB metadata: %s - %s", discInfo.Artist, discInfo.Title)
 
 	return discInfo, nil
 }
@@ -94,17 +103,22 @@ func queryGNUDB(client *http.Client, gnuConfig *gnuConfig, gnuToc string) (strin
 		return "", fmt.Errorf("Failed to query gnudb: empty config")
 	}
 	queryURL := fmt.Sprintf("%s?cmd=cddb+query+%s&hello=%s&proto=6", gnuConfig.GnudbURL, gnuToc, gnuConfig.GnuHello)
+	logger.Debugf("Querying GNUDB: %s", queryURL)
 	resp, err := makeGnuRequest(client, queryURL)
 	if err != nil {
+		logger.Debugf("GNUDB request failed: %v", err)
 		return "", fmt.Errorf("Failed GnuRequest (%s): %w", queryURL, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		logger.Debugf("Failed to read GNUDB response body: %v", err)
 		return "", fmt.Errorf("Failed to read response body: %w", err)
 	}
+	logger.Debugf("GNUDB query response: %s", string(body))
 	if !strings.Contains(string(body), "Found exact matches") {
+		logger.Debugf("No exact match found in GNUDB response")
 		return "", fmt.Errorf("No exact match found in GNUDB: %s", string(body))
 	}
 	return extractGnuDBID(string(body))
@@ -141,12 +155,15 @@ func fetchFullMetadata(client *http.Client, gnuConfig *gnuConfig, gnudbID string
 		return nil, fmt.Errorf("Failed to fetch gnudb metadata: empty config")
 	}
 	readURL := fmt.Sprintf("%s?cmd=cddb+read+data+%s&hello=%s&proto=6", gnuConfig.GnudbURL, gnudbID, gnuConfig.GnuHello)
+	logger.Debugf("Fetching full metadata from GNUDB: %s", readURL)
 	resp, err := makeGnuRequest(client, readURL)
 	if err != nil {
+		logger.Debugf("GNUDB metadata request failed: %v", err)
 		return nil, fmt.Errorf("Failed GnuRequest (%s): %w", readURL, err)
 	}
 	defer resp.Body.Close()
 
+	logger.Debugf("Parsing GNUDB response...")
 	return parseGNUDBResponse(resp.Body)
 }
 
@@ -161,6 +178,7 @@ func fetchFullMetadata(client *http.Client, gnuConfig *gnuConfig, gnudbID string
 func parseGNUDBResponse(body io.Reader) (*types.DiscInfo, error) {
 	scanner := bufio.NewScanner(body)
 	discInfo := &types.DiscInfo{}
+	trackCount := 0
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -170,22 +188,30 @@ func parseGNUDBResponse(body io.Reader) (*types.DiscInfo, error) {
 			parts := strings.SplitN(titleLine, " / ", 2)
 			if len(parts) == 2 {
 				discInfo.Artist, discInfo.Title = parts[0], parts[1]
+				logger.Debugf("Parsed GNUDB title: %s - %s", discInfo.Artist, discInfo.Title)
 			}
 		case strings.HasPrefix(line, keyYear):
 			discInfo.ReleaseDate = strings.TrimPrefix(line, keyYear)
+			logger.Debugf("Parsed GNUDB year: %s", discInfo.ReleaseDate)
 		case strings.HasPrefix(line, keyGenre):
 			discInfo.Genre = strings.TrimPrefix(line, keyGenre)
+			logger.Debugf("Parsed GNUDB genre: %s", discInfo.Genre)
 		case strings.HasPrefix(line, keyTrack):
 			track := strings.SplitN(line, "=", 2)
 			discInfo.Tracks = append(discInfo.Tracks, track[1])
+			trackCount++
 		}
 	}
 
+	logger.Debugf("Parsed %d tracks from GNUDB", trackCount)
+
 	if err := scanner.Err(); err != nil {
+		logger.Errorf("Failed to scan GNUDB response body: %v", err)
 		return nil, fmt.Errorf("Failed to scan body: %w", err)
 	}
 
 	if discInfo.Title == "" {
+		logger.Errorf("No valid title found in GNUDB data")
 		return nil, fmt.Errorf("error: no valid title in GNUDB data")
 	}
 

@@ -9,6 +9,7 @@
 - **Disc ID Calculation**: Uses `libdiscid` to compute MusicBrainz and GNUDB compatible disc IDs.
 - **Metadata Integration**: Fetch track and album metadata from GNUDB or MusicBrainz.
 - **Fix Incorrect CUE Files**: Force the use of a specific MusicBrainz release to correct or regenerate CUE files.
+- **Configurable Logging**: Adjustable log levels (debug, info, warn, error) for detailed troubleshooting or quiet operation.
 - **Configurable**: Allows configuration through files, environment variables, and command-line flags.
 
 ## Installation
@@ -64,14 +65,25 @@ The tool loads configurations in the following order of priority:
     **Please note that gnuHelloEmail is mandatory to use gnudb source**
 
     ```yaml
-    gnuHelloEmail: "your-email@example.com"  # (no default)
+    gnuHelloEmail: "your-email@example.com"  # (no default, required for GNUDB)
     gnuDbUrl: "https://gnudb.gnudb.org"      # (default)
     cacheLocation: "/var/cache/disc-cuer"    # (root default, else ~/.cache/disc-cuer)
     device: "/dev/sr0"                       # (default)
+    logLevel: "info"                         # (default: info, options: debug, info, warn, error)
     ```
 
+    A complete example configuration file is available at `config.example.yaml`.
+
+    ### Log Levels
+
+    - **debug**: Shows detailed diagnostic information including HTTP requests, TOC data, and file operations (very verbose)
+    - **info**: Shows general informational messages about operations (default)
+    - **warn**: Shows warning messages that don't prevent operation
+    - **error**: Shows only error messages
+
+    Example using environment variables:
     ```bash
-    DISC_CUER_GNUHELLOEMAIL="your-email@example.com" DISC_CUER_GNUDBURL="https://gnudb.gnudb.org" DISC_CUER_CACHELOCATION="/var/cache/disc-cuer" DISC_CUER_DEVICE="/dev/sr0" disc-cuer --disc-id <id> --musicbrainz <release_id> --overwrite
+    DISC_CUER_GNUHELLOEMAIL="your-email@example.com" DISC_CUER_LOGLEVEL="debug" disc-cuer
     ```
 
 ## Examples
@@ -87,11 +99,12 @@ The tool loads configurations in the following order of priority:
 ## Project Structure
 - `main/`: Entry point and CLI logic.
 - `cue/`: CUE file generation and related utilities.
-- `discinfo/`: Disc ID and metadata fetching logic.
 - `gnudb/`: GNUDB integration.
 - `musicbrainz/`: MusicBrainz integration.
-- `config`: Configuration package with github.com/spf13/viper.
+- `config/`: Configuration package with github.com/spf13/viper.
+- `logger/`: Logging system with configurable log levels.
 - `utils/`: Shared helper functions.
+- `types/`: Type definitions.
 
 
 ## Contributing

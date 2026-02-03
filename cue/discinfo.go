@@ -11,6 +11,7 @@ import (
 
 	"github.com/b0bbywan/go-disc-cuer/config"
 	"github.com/b0bbywan/go-disc-cuer/gnudb"
+	"github.com/b0bbywan/go-disc-cuer/logger"
 	"github.com/b0bbywan/go-disc-cuer/musicbrainz"
 	"github.com/b0bbywan/go-disc-cuer/types"
 	"github.com/b0bbywan/go-disc-cuer/utils"
@@ -53,15 +54,19 @@ func fetchCoverArtIfNeeded(discInfo *types.DiscInfo, cacheLocation, cueFilePath 
 //     or the file cannot be saved; nil otherwise.
 func fetchCoverArt(mbID, coverFile string) error {
 	url := fmt.Sprintf("%s/%s/front", coverArtURL, mbID)
+	logger.Debugf("Fetching cover art from: %s", url)
 	resp, err := http.Get(url)
 	if err != nil {
+		logger.Debugf("HTTP request failed for cover art: %v", err)
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
+		logger.Debugf("Cover art not found (status %d) for MusicBrainz ID: %s", resp.StatusCode, mbID)
 		return fmt.Errorf("failed to fetch cover art: received status code %d", resp.StatusCode)
 	}
 
+	logger.Debugf("Saving cover art to: %s", coverFile)
 	file, err := os.Create(coverFile)
 	if err != nil {
 		return err
@@ -91,18 +96,32 @@ func fetchDiscInfoConcurrently(cuerConfig *config.Config, gnuToc, mbToc string) 
 	formattedGnuTOC := strings.ReplaceAll(gnuToc, " ", "+")
 	formattedMBTOC := strings.ReplaceAll(mbToc, " ", "+")
 
+	logger.Debugf("Fetching disc info concurrently from GNUDB (TOC: %s) and MusicBrainz (TOC: %s)", formattedGnuTOC, formattedMBTOC)
+
 	wg.Add(2)
 
 	// Fetch from GNUDB
 	go func() {
 		defer wg.Done()
+		logger.Debugf("Starting GNUDB fetch...")
 		gndbDiscInfo, gndbErr = gnudb.FetchDiscInfo(cuerConfig, formattedGnuTOC)
+		if gndbErr != nil {
+			logger.Debugf("GNUDB fetch failed: %v", gndbErr)
+		} else {
+			logger.Debugf("GNUDB fetch successful: %s - %s", gndbDiscInfo.Artist, gndbDiscInfo.Title)
+		}
 	}()
 
 	// Fetch from MusicBrainz
 	go func() {
 		defer wg.Done()
+		logger.Debugf("Starting MusicBrainz fetch...")
 		mbDiscInfo, mbErr = musicbrainz.FetchReleaseByToc(formattedMBTOC)
+		if mbErr != nil {
+			logger.Debugf("MusicBrainz fetch failed: %v", mbErr)
+		} else {
+			logger.Debugf("MusicBrainz fetch successful: %s - %s", mbDiscInfo.Artist, mbDiscInfo.Title)
+		}
 	}()
 
 	// Wait for both fetches to complete
@@ -128,17 +147,21 @@ func selectDiscInfo(gndbDiscInfo *types.DiscInfo, gndbErr error, mbDiscInfo *typ
 	finalDiscInfo := &types.DiscInfo{}
 	if gndbErr == nil {
 		*finalDiscInfo = *gndbDiscInfo
+		logger.Infof("Using GNUDB metadata: %s - %s", gndbDiscInfo.Artist, gndbDiscInfo.Title)
 	} else if mbErr == nil {
 		*finalDiscInfo = *mbDiscInfo
+		logger.Infof("Using MusicBrainz metadata: %s - %s", mbDiscInfo.Artist, mbDiscInfo.Title)
 	}
 
 	// Use MusicBrainz ID regardless of source priority
 	if mbDiscInfo != nil {
 		finalDiscInfo.ID = mbDiscInfo.ID
+		logger.Debugf("Using MusicBrainz ID: %s", mbDiscInfo.ID)
 	}
 
 	// If both failed, return an error
 	if gndbErr != nil && mbErr != nil {
+		logger.Errorf("Both GNUDB and MusicBrainz fetches failed")
 		return nil, fmt.Errorf("failed to fetch from both sources: GNUDB error: %w; MusicBrainz error: %w", gndbErr, mbErr)
 	}
 

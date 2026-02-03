@@ -5,10 +5,10 @@ package main
 
 import (
 	"flag"
-	"log"
 
 	"github.com/b0bbywan/go-disc-cuer/config"
 	"github.com/b0bbywan/go-disc-cuer/cue"
+	"github.com/b0bbywan/go-disc-cuer/logger"
 )
 
 // Command-line flags
@@ -54,12 +54,19 @@ func main() {
 
 	cuerConfig, err := config.NewDefaultConfig()
 	if err != nil {
-		log.Fatalf("error: Failed to initialize %s config: %v", config.AppName, err)
+		logger.Fatalf("Failed to initialize %s config: %v", config.AppName, err)
 	}
 
+	// Initialize logger with configured level
+	logger.SetLevel(logger.ParseLogLevel(cuerConfig.LogLevel))
+	logger.Debugf("Starting %s version %s", cuerConfig.AppName, cuerConfig.AppVersion)
+	logger.Debugf("Configuration loaded: LogLevel=%s, Device=%s, CacheLocation=%s",
+		cuerConfig.LogLevel, cuerConfig.Device, cuerConfig.CacheLocation)
+
 	device := getDevice(deviceFlag, cuerConfig)
+	logger.Debugf("Using device: %s", device)
 
 	if _, err = cue.GenerateWithOptions(device, cuerConfig, musicbrainzID, providedDiscID, overwrite); err != nil {
-		log.Fatalf("error: Failed to generate playlist from both GNUDB and MusicBrainz: %v", err)
+		logger.Fatalf("Failed to generate playlist from both GNUDB and MusicBrainz: %v", err)
 	}
 }

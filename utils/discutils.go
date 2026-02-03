@@ -2,10 +2,11 @@ package utils
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"go.uploadedlobster.com/discid"
+
+	"github.com/b0bbywan/go-disc-cuer/logger"
 )
 
 // GetTocAndDiscID takes a disc object and returns the corresponding GNU TOC string, MusicBrainz disc ID, and any errors encountered.
@@ -18,13 +19,16 @@ import (
 //   - discID (string): The FreeDB ID for the disc.
 //   - error: Any error encountered during the process.
 func GetTocAndDiscID(disc discid.Disc) (string, string, error) {
+	logger.Debugf("Generating GNU TOC and disc ID from disc data")
 	gnuToc, err := tocToGnu(disc)
 	if err != nil {
+		logger.Errorf("Failed to generate GNU TOC: %v", err)
 		return "", "", fmt.Errorf("failed to generate GNU TOC: %w", err)
 	}
 
 	discID := disc.FreedbID()
-	log.Printf("GNU TOC: %s", gnuToc)
+	logger.Debugf("GNU TOC: %s", gnuToc)
+	logger.Debugf("Disc ID (FreeDB): %s", discID)
 	return gnuToc, discID, nil
 }
 
@@ -37,8 +41,9 @@ func GetTocAndDiscID(disc discid.Disc) (string, string, error) {
 //   - mbToc (string): The MusicBrainz TOC string for the disc.
 //   - error: Any error encountered during the process.
 func GetMusicBrainzTOC(disc discid.Disc) (string, error) {
+	logger.Debugf("Generating MusicBrainz TOC from disc data")
 	mbToc := disc.TOCString()
-	log.Printf("MusicBrainz TOC: %s", mbToc)
+	logger.Debugf("MusicBrainz TOC: %s", mbToc)
 	return mbToc, nil
 }
 
@@ -55,19 +60,23 @@ func tocToGnu(disc discid.Disc) (string, error) {
 	freedbID := disc.FreedbID()
 	// Get the number of tracks
 	trackCount := disc.LastTrackNumber()
+	logger.Debugf("Building GNU TOC for disc with %d tracks (FreeDB ID: %s)", trackCount, freedbID)
 
 	// Collect track offsets
 	offsets := []string{freedbID, fmt.Sprintf("%d", trackCount)}
 	for i := 1; i <= trackCount; i++ {
 		track, err := disc.Track(i)
 		if err != nil {
+			logger.Errorf("Failed to get track %d: %v", i, err)
 			return "", err
 		}
 		offsets = append(offsets, fmt.Sprintf("%d", track.Offset))
 	}
 
 	// Append the disc duration as an integer
-	offsets = append(offsets, fmt.Sprintf("%d", int(disc.Duration().Seconds())))
+	discDuration := int(disc.Duration().Seconds())
+	offsets = append(offsets, fmt.Sprintf("%d", discDuration))
+	logger.Debugf("Disc duration: %d seconds", discDuration)
 
 	// Join the components with spaces
 	return strings.Join(offsets, " "), nil
@@ -82,10 +91,14 @@ func tocToGnu(disc discid.Disc) (string, error) {
 //   - trackCount (int): The total number of tracks on the disc
 //   - error :  Any error while opening the disc.
 func GetTrackCount(device string) (int, error) {
+	logger.Debugf("Reading track count from device: %s", device)
 	disc, err := discid.Read(device)
 	if err != nil {
+		logger.Errorf("Failed to read disc from device %s: %v", device, err)
 		return 0, err
 	}
 	defer disc.Close()
-	return disc.LastTrackNumber(), nil
+	trackCount := disc.LastTrackNumber()
+	logger.Debugf("Disc has %d tracks", trackCount)
+	return trackCount, nil
 }

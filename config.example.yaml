@@ -1,0 +1,32 @@
+# Example configuration file for disc-cuer
+# Copy this file to one of these locations:
+#   - /etc/disc-cuer/config.yaml
+#   - ~/.config/disc-cuer/config.yaml
+
+# Log level: debug, info, warn, error
+# Default: info
+# - debug: Shows detailed diagnostic information (very verbose)
+# - info: Shows general informational messages
+# - warn: Shows warning messages
+# - error: Shows only error messages
+logLevel: info
+
+# Email address required for GNUDB operations
+# This is required by GNUDB protocol
+gnuHelloEmail: your-email@example.com
+
+# GNUDB server URL
+# Default: https://gnudb.gnudb.org
+gnuDbUrl: https://gnudb.gnudb.org
+
+# CD-ROM device path
+# Default: /dev/sr0
+# Common values:
+#   - Linux: /dev/sr0, /dev/cdrom
+#   - macOS: /dev/disk2 (varies)
+device: /dev/sr0
+
+# Cache location for CUE files and cover art
+# Default: ~/.cache/disc-cuer (Linux) or /var/cache/disc-cuer
+# Leave empty to use default
+cacheLocation: ""
