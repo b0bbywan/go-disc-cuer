@@ -1,8 +1,28 @@
-# go-disc-cuer
-
-[![Go Reference](https://pkg.go.dev/badge/github.com/b0bbywan/go-disc-cuer/.svg)](https://pkg.go.dev/github.com/b0bbywan/go-disc-cuer/)
-
-`go-disc-cuer` is a CLI tool for generating CUE files from audio CDs, with support for metadata enrichment from GNDB and MusicBrainz. It leverages `libdiscid` for disc ID calculation and provides options for customization and integration into workflows.
+<p align="center">
+  <a href="https://odio.love"><img src="https://odio.love/logo.png" alt="odio" width="160" /></a>   
+  </p>
+  <h1 align="center">go-disc-cuer</h1>
+  <p align="center"><em>Generate CUE files from audio CDs with MusicBrainz and GNUDB metadata.</em></p>
+  <p align="center">
+  <a href="https://github.com/b0bbywan/go-disc-cuer/releases"><img src="https://img.shields.io/github/v/release/b0bbywan/go-disc-cuer?include_prereleases" alt="Release" /></a>
+  <a href="https://github.com/b0bbywan/go-disc-cuer/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License" /></a>
+  <a href="https://goreportcard.com/report/github.com/b0bbywan/go-disc-cuer"><img src="https://goreportcard.com/badge/github.com/b0bbywan/go-disc-cuer" alt="Go Report Card" /></a>
+  <a href="https://pkg.go.dev/github.com/b0bbywan/go-disc-cuer"><img src="https://pkg.go.dev/badge/github.com/b0bbywan/go-disc-cuer.svg" alt="Go Reference" /></a>
+  <a href="https://github.com/sponsors/b0bbywan"><img src="https://img.shields.io/github/sponsors/b0bbywan?label=Sponsor&logo=GitHub" alt="GitHub Sponsors" /></a>   
+  </p>
+  <p align="center">
+  <a href="https://docs.odio.love/guides/audio-cd/"><img src="https://img.shields.io/badge/Audio%20CD-F18D00" alt="Audio CD" /></a>
+  <a href="https://docs.odio.love/disc-player/disc-cuer/"><img src="https://img.shields.io/badge/CUE%20generation-5B21B6" alt="CUE generation" /></a>
+  <a href="https://musicbrainz.org/"><img src="https://img.shields.io/badge/MusicBrainz-BA478F?logo=musicbrainz&logoColor=white" alt="MusicBrainz" /></a>
+  <a href="https://gnudb.org/"><img src="https://img.shields.io/badge/GNUDB-A42E2B" alt="GNUDB" /></a>   
+  </p>
+  <p align="center">   
+  Part of the <a href="https://odio.love">odio</a> project — <a href="https://docs.odio.love/disc-player/disc-cuer/">full documentation</a>.
+  </p>
+  <p align="center">
+  <a href="https://go.dev/"><img src="https://img.shields.io/badge/Go-00ADD8?logo=go&logoColor=white" alt="Go" /></a>
+  <a href="https://musicbrainz.org/doc/libdiscid"><img src="https://img.shields.io/badge/libdiscid-2E6DB4" alt="libdiscid" /></a>
+  </p>
 
 ## Features
 
