@@ -63,19 +63,19 @@ func newGnuConfig(cuerConfig *config.Config) (*gnuConfig, error) {
 func FetchDiscInfo(cuerConfig *config.Config, gnuToc string) (*types.DiscInfo, error) {
 	gnuConfig, err := newGnuConfig(cuerConfig)
 	if err != nil {
-		return nil, fmt.Errorf("Invalid GNUConfig: %w", err)
+		return nil, fmt.Errorf("invalid GNUConfig: %w", err)
 	}
 	client := &http.Client{}
 
 	// First, query GNUDB for a match
 	gnudbID, err := queryGNUDB(client, gnuConfig, gnuToc)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to query %s on gnuDB: %w", gnuToc, err)
+		return nil, fmt.Errorf("failed to query %s on gnuDB: %w", gnuToc, err)
 	}
 	// Fetch the full metadata from GNDB
 	discInfo, err := fetchFullMetadata(client, gnuConfig, gnudbID)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to fetch %s (%s) metadata on gnuDB: %w", gnudbID, gnuToc, err)
+		return nil, fmt.Errorf("failed to fetch %s (%s) metadata on gnuDB: %w", gnudbID, gnuToc, err)
 	}
 
 	return discInfo, nil
@@ -93,22 +93,26 @@ func FetchDiscInfo(cuerConfig *config.Config, gnuToc string) (*types.DiscInfo, e
 //   - error: An error if the query fails, the response cannot be read, or no match is found.
 func queryGNUDB(client *http.Client, gnuConfig *gnuConfig, gnuToc string) (string, error) {
 	if gnuConfig == nil {
-		return "", fmt.Errorf("Failed to query gnudb: empty config")
+		return "", fmt.Errorf("failed to query gnudb: empty config")
 	}
 	queryURL := fmt.Sprintf("%s?cmd=cddb+query+%s&hello=%s&proto=6", gnuConfig.GnudbURL, gnuToc, gnuConfig.GnuHello)
-	log.Printf("gnudb query: GET %s", queryURL)
+	log.Printf("gnudb query: GET %s", redactHello(queryURL))
 	resp, err := makeGnuRequest(client, queryURL)
 	if err != nil {
-		return "", fmt.Errorf("Failed GnuRequest (%s): %w", queryURL, err)
+		return "", fmt.Errorf("failed GnuRequest (%s): %w", redactHello(queryURL), err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("gnudb: closing response body: %v", err)
+		}
+	}()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("Failed to read response body: %w", err)
+		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 	if !strings.Contains(string(body), "Found exact matches") {
-		return "", fmt.Errorf("No exact match found in GNUDB: %s", string(body))
+		return "", fmt.Errorf("no exact match found in GNUDB: %s", string(body))
 	}
 	id, err := extractGnuDBID(string(body))
 	if err != nil {
@@ -146,15 +150,19 @@ func extractGnuDBID(response string) (string, error) {
 //   - error: An error if the metadata cannot be retrieved or parsed.
 func fetchFullMetadata(client *http.Client, gnuConfig *gnuConfig, gnudbID string) (*types.DiscInfo, error) {
 	if gnuConfig == nil {
-		return nil, fmt.Errorf("Failed to fetch gnudb metadata: empty config")
+		return nil, fmt.Errorf("failed to fetch gnudb metadata: empty config")
 	}
 	readURL := fmt.Sprintf("%s?cmd=cddb+read+data+%s&hello=%s&proto=6", gnuConfig.GnudbURL, gnudbID, gnuConfig.GnuHello)
-	log.Printf("gnudb read: GET %s", readURL)
+	log.Printf("gnudb read: GET %s", redactHello(readURL))
 	resp, err := makeGnuRequest(client, readURL)
 	if err != nil {
-		return nil, fmt.Errorf("Failed GnuRequest (%s): %w", readURL, err)
+		return nil, fmt.Errorf("failed GnuRequest (%s): %w", redactHello(readURL), err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("gnudb: closing response body: %v", err)
+		}
+	}()
 
 	return parseGNUDBResponse(resp.Body)
 }
@@ -201,7 +209,7 @@ func parseGNUDBResponse(body io.Reader) (*types.DiscInfo, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("Failed to scan body: %w", err)
+		return nil, fmt.Errorf("failed to scan body: %w", err)
 	}
 
 	if discInfo.Title == "" {
@@ -229,6 +237,21 @@ func parseTrackLine(line string) (int, string, bool) {
 		return 0, "", false
 	}
 	return index, rest[eq+1:], true
+}
+
+// redactHello hides the hello parameter, which carries the user's email, before
+// a GNUDB URL is logged or wrapped into an error.
+func redactHello(url string) string {
+	const key = "hello="
+	start := strings.Index(url, key)
+	if start < 0 {
+		return url
+	}
+	valStart := start + len(key)
+	if end := strings.IndexByte(url[valStart:], '&'); end >= 0 {
+		return url[:valStart] + "***" + url[valStart+end:]
+	}
+	return url[:valStart] + "***"
 }
 
 // makeGnuRequest performs an HTTP GET request with a predefined User-Agent header.

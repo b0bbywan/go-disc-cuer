@@ -72,6 +72,37 @@ func TestFetchDiscInfoNoMatch(t *testing.T) {
 	}
 }
 
+func TestRedactHello(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "hello between params",
+			in:   "http://h/cddb.cgi?cmd=cddb+query+x&hello=me@example.com+host+app+1&proto=6",
+			want: "http://h/cddb.cgi?cmd=cddb+query+x&hello=***&proto=6",
+		},
+		{
+			name: "hello at end",
+			in:   "http://h/cddb.cgi?cmd=x&hello=me@example.com+host+app+1",
+			want: "http://h/cddb.cgi?cmd=x&hello=***",
+		},
+		{
+			name: "no hello",
+			in:   "http://h/cddb.cgi?cmd=x&proto=6",
+			want: "http://h/cddb.cgi?cmd=x&proto=6",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := redactHello(tt.in); got != tt.want {
+				t.Errorf("redactHello() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNewGnuConfigRequiresEmail(t *testing.T) {
 	if _, err := newGnuConfig(&config.Config{}); err == nil {
 		t.Fatal("newGnuConfig without GnuHelloEmail expected error, got nil")
