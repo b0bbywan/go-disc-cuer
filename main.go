@@ -39,7 +39,7 @@ func main() {
 		log.Fatalf("error: failed to initialize %s config: %v", config.AppName, err)
 	}
 
-	if _, err = cue.Generate(cfg, cue.Options{
+	if _, err = cue.New(cfg).Generate(cue.Options{
 		Device:        getDevice(deviceFlag, cfg),
 		DiscID:        providedDiscID,
 		MusicBrainzID: musicbrainzID,

@@ -37,12 +37,49 @@ type discData struct {
 	mbToc  string
 }
 
+// readableDisc is a disc the flow can read TOCs from and then release.
+type readableDisc interface {
+	utils.Disc
+	Close()
+}
+
+// Generator writes CUE sheets for audio discs. Its hardware (drive) and network
+// (metadata) dependencies are injected at construction via Option, so tests can
+// run without a drive or network. Create one with New.
+type Generator struct {
+	cfg      *config.Config
+	openDisc func(device string) (readableDisc, error)
+	resolve  func(opts Options, disc discData) (*types.DiscInfo, error)
+}
+
+// Option customises a Generator. The injection points exist mainly for testing;
+// production code uses New's defaults (read the physical drive, query the network).
+type Option func(*Generator)
+
+// New returns a Generator that reads the physical drive via discid.Read and
+// resolves metadata from GNUDB/MusicBrainz. Options override those defaults.
+func New(cfg *config.Config, opts ...Option) *Generator {
+	g := &Generator{
+		cfg: cfg,
+		openDisc: func(device string) (readableDisc, error) {
+			return discid.Read(device)
+		},
+	}
+	g.resolve = func(opts Options, disc discData) (*types.DiscInfo, error) {
+		return resolveInfo(g.cfg, opts, disc)
+	}
+	for _, opt := range opts {
+		opt(g)
+	}
+	return g
+}
+
 // Generate resolves disc metadata and writes a CUE sheet to the cache, returning
 // its path. A cached sheet is reused unless Overwrite is set. Metadata comes from
 // MusicBrainzID when given, otherwise from a concurrent GNUDB/MusicBrainz lookup by
 // TOC. The drive is read only when no DiscID is supplied.
-func Generate(cfg *config.Config, opts Options) (string, error) {
-	if cfg == nil {
+func (g *Generator) Generate(opts Options) (string, error) {
+	if g.cfg == nil {
 		return "", errors.New("nil config")
 	}
 	if err := opts.validate(); err != nil {
@@ -52,26 +89,26 @@ func Generate(cfg *config.Config, opts Options) (string, error) {
 	disc := discData{id: opts.DiscID}
 	if disc.id == "" {
 		var err error
-		if disc, err = readDisc(opts.Device); err != nil {
+		if disc, err = g.readDisc(opts.Device); err != nil {
 			return "", err
 		}
 	}
 
-	path := utils.CachePlaylistPath(cfg.GetCacheLocation(), disc.id)
+	path := utils.CachePlaylistPath(g.cfg.GetCacheLocation(), disc.id)
 	if !opts.Overwrite && utils.CheckIfPlaylistExists(path) {
 		return path, nil
 	}
 
-	info, err := resolveInfo(cfg, opts, disc)
+	info, err := g.resolve(opts, disc)
 	if err != nil {
 		return "", err
 	}
-	return write(cfg.GetCacheLocation(), info, disc.id, path)
+	return write(g.cfg.GetCacheLocation(), info, disc.id, path)
 }
 
 // readDisc reads the drive once and computes the cache id and both TOCs.
-func readDisc(device string) (discData, error) {
-	disc, err := discid.Read(device)
+func (g *Generator) readDisc(device string) (discData, error) {
+	disc, err := g.openDisc(device)
 	if err != nil {
 		return discData{}, err
 	}
@@ -115,6 +152,17 @@ func write(cacheLocation string, info *types.DiscInfo, id, path string) (string,
 	}
 	log.Printf("playlist generated at %s", path)
 	return path, nil
+}
+
+// withDiscOpener injects a drive opener, letting tests parse a disc from a TOC
+// string (discid.Parse) instead of reading physical hardware.
+func withDiscOpener(fn func(device string) (readableDisc, error)) Option {
+	return func(g *Generator) { g.openDisc = fn }
+}
+
+// withResolver injects a metadata source, letting tests bypass the network.
+func withResolver(fn func(opts Options, disc discData) (*types.DiscInfo, error)) Option {
+	return func(g *Generator) { g.resolve = fn }
 }
 
 // renderCue builds the CUE sheet body. Pure: no I/O, no network.
