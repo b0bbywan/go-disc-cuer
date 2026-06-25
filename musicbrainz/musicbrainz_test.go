@@ -109,3 +109,29 @@ func TestConvertReleaseToDiscInfo(t *testing.T) {
 		t.Errorf("unexpected disc info: %+v", info)
 	}
 }
+
+func TestConvertReleaseToDiscInfoMissingData(t *testing.T) {
+	withArtist := types.MBRelease{ID: "id-1"}
+	withArtist.ArtistCredit = append(withArtist.ArtistCredit, struct{ Name string }{Name: "Artist"})
+
+	withMedia := types.MBRelease{ID: "id-2"}
+	withMedia.Media = append(withMedia.Media, struct {
+		Tracks []struct{ Title string }
+	}{})
+
+	tests := []struct {
+		name    string
+		release types.MBRelease
+	}{
+		{name: "no media", release: withArtist},
+		{name: "no artist credit", release: withMedia},
+		{name: "empty release", release: types.MBRelease{ID: "id-3"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := convertReleaseToDiscInfo(tt.release); err == nil {
+				t.Errorf("convertReleaseToDiscInfo(%s) expected error, got nil", tt.name)
+			}
+		})
+	}
+}

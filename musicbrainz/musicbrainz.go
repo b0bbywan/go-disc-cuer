@@ -63,6 +63,13 @@ func FetchReleaseByToc(mbToc string) (*types.DiscInfo, error) {
 //   - *types.DiscInfo: A struct with the converted disc information (artist, title, release date, tracks).
 //   - error: An error if any data is missing or cannot be converted.
 func convertReleaseToDiscInfo(release types.MBRelease) (*types.DiscInfo, error) {
+	if len(release.Media) == 0 {
+		return nil, fmt.Errorf("release %s has no media", release.ID)
+	}
+	if len(release.ArtistCredit) == 0 {
+		return nil, fmt.Errorf("release %s has no artist credit", release.ID)
+	}
+
 	tracks := make([]string, len(release.Media[0].Tracks))
 	for i, track := range release.Media[0].Tracks {
 		tracks[i] = track.Title
