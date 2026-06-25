@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/b0bbywan/go-disc-cuer/types"
@@ -93,11 +94,16 @@ func convertReleaseToDiscInfo(release types.MBRelease) (*types.DiscInfo, error) 
 // Returns:
 //   - error: An error if the request fails or if the response cannot be parsed.
 func fetchJSON(url string, target interface{}) error {
+	log.Printf("musicbrainz: GET %s", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("musicbrainz: closing response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("error: failed to fetch from URL %s, status code: %d", url, resp.StatusCode)

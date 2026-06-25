@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -95,6 +96,7 @@ func queryGNUDB(client *http.Client, gnuConfig *gnuConfig, gnuToc string) (strin
 		return "", fmt.Errorf("Failed to query gnudb: empty config")
 	}
 	queryURL := fmt.Sprintf("%s?cmd=cddb+query+%s&hello=%s&proto=6", gnuConfig.GnudbURL, gnuToc, gnuConfig.GnuHello)
+	log.Printf("gnudb query: GET %s", queryURL)
 	resp, err := makeGnuRequest(client, queryURL)
 	if err != nil {
 		return "", fmt.Errorf("Failed GnuRequest (%s): %w", queryURL, err)
@@ -108,7 +110,12 @@ func queryGNUDB(client *http.Client, gnuConfig *gnuConfig, gnuToc string) (strin
 	if !strings.Contains(string(body), "Found exact matches") {
 		return "", fmt.Errorf("No exact match found in GNUDB: %s", string(body))
 	}
-	return extractGnuDBID(string(body))
+	id, err := extractGnuDBID(string(body))
+	if err != nil {
+		return "", err
+	}
+	log.Printf("gnudb match: %s", id)
+	return id, nil
 }
 
 // extractGnuDBID extracts the GNUDB ID from a successful query response.
@@ -142,6 +149,7 @@ func fetchFullMetadata(client *http.Client, gnuConfig *gnuConfig, gnudbID string
 		return nil, fmt.Errorf("Failed to fetch gnudb metadata: empty config")
 	}
 	readURL := fmt.Sprintf("%s?cmd=cddb+read+data+%s&hello=%s&proto=6", gnuConfig.GnudbURL, gnudbID, gnuConfig.GnuHello)
+	log.Printf("gnudb read: GET %s", readURL)
 	resp, err := makeGnuRequest(client, readURL)
 	if err != nil {
 		return nil, fmt.Errorf("Failed GnuRequest (%s): %w", readURL, err)

@@ -36,11 +36,17 @@ func ensureCoverArt(cacheLocation string, info *types.DiscInfo, id string) {
 
 // fetchCoverArt saves the Cover Art Archive front image for a MusicBrainz id.
 func fetchCoverArt(mbID, dst string) error {
-	resp, err := http.Get(fmt.Sprintf("%s/%s/front", coverArtURL, mbID))
+	url := fmt.Sprintf("%s/%s/front", coverArtURL, mbID)
+	log.Printf("cover art: GET %s", url)
+	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("cover art: closing response body: %v", err)
+		}
+	}()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("status %d", resp.StatusCode)
 	}
@@ -49,7 +55,11 @@ func fetchCoverArt(mbID, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("cover art: closing %s: %v", dst, err)
+		}
+	}()
 
 	_, err = io.Copy(file, resp.Body)
 	return err
@@ -78,6 +88,14 @@ func fetchDiscInfoConcurrently(cfg *config.Config, gnuToc, mbToc string) (*types
 // selectDiscInfo prefers the GNUDB body but always keeps the MusicBrainz id,
 // which the cover art lookup needs. It fails only when both sources fail.
 func selectDiscInfo(gnudbInfo *types.DiscInfo, gnudbErr error, mbInfo *types.DiscInfo, mbErr error) (*types.DiscInfo, error) {
+	// Log each source's outcome: a failure here is non-fatal as long as the
+	// other source succeeds, so it would otherwise be swallowed silently.
+	if gnudbErr != nil {
+		log.Printf("gnudb lookup failed: %v", gnudbErr)
+	}
+	if mbErr != nil {
+		log.Printf("musicbrainz lookup failed: %v", mbErr)
+	}
 	if gnudbErr != nil && mbErr != nil {
 		return nil, fmt.Errorf("gnudb: %w; musicbrainz: %w", gnudbErr, mbErr)
 	}
@@ -85,8 +103,10 @@ func selectDiscInfo(gnudbInfo *types.DiscInfo, gnudbErr error, mbInfo *types.Dis
 	info := &types.DiscInfo{}
 	switch {
 	case gnudbErr == nil:
+		log.Printf("metadata source: gnudb")
 		*info = *gnudbInfo
 	case mbErr == nil:
+		log.Printf("metadata source: musicbrainz")
 		*info = *mbInfo
 	}
 	if mbErr == nil {
