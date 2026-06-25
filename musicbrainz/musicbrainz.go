@@ -9,9 +9,9 @@ import (
 	"github.com/b0bbywan/go-disc-cuer/types"
 )
 
-const (
-	mbURL = "https://musicbrainz.org/ws/2"
-)
+// mbURL is the MusicBrainz web service base. It is a var rather than a const so
+// tests can redirect it to a local stub server.
+var mbURL = "https://musicbrainz.org/ws/2"
 
 // FetchReleaseByID fetches a MusicBrainz release's information based on its release ID.
 //

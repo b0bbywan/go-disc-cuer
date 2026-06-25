@@ -16,7 +16,9 @@ import (
 	"github.com/b0bbywan/go-disc-cuer/utils"
 )
 
-const coverArtURL = "https://coverartarchive.org/release"
+// coverArtURL is the Cover Art Archive base. It is a var rather than a const so
+// tests can redirect it to a local stub server.
+var coverArtURL = "https://coverartarchive.org/release"
 
 // ensureCoverArt downloads the front cover into the cache when info has none.
 // Failures are logged, not fatal: a sheet without cover is still valid.
