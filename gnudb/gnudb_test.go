@@ -3,6 +3,7 @@ package gnudb
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -102,5 +103,61 @@ func TestParseGNUDBResponse(t *testing.T) {
 
 	if _, err := parseGNUDBResponse(strings.NewReader("DYEAR=2021\n")); err == nil {
 		t.Fatal("expected error when title is missing, got nil")
+	}
+}
+
+func TestParseTrackLineContinuation(t *testing.T) {
+	// Two lines sharing TTITLE0 must concatenate into a single track.
+	body := "DTITLE=Artist / Album\nTTITLE0=Long title part one \nTTITLE0=and part two\n"
+	info, err := parseGNUDBResponse(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("parseGNUDBResponse() error = %v", err)
+	}
+	if len(info.Tracks) != 1 {
+		t.Fatalf("got %d tracks, want 1: %q", len(info.Tracks), info.Tracks)
+	}
+	if want := "Long title part one and part two"; info.Tracks[0] != want {
+		t.Errorf("track 0 = %q, want %q", info.Tracks[0], want)
+	}
+}
+
+// TestParseGNUDBResponseIssue9 replays the real GNUDB record from issue #9, where
+// two titles (TTITLE13 and TTITLE19) are wrapped across lines. The wrapped lines
+// must rejoin into their own track rather than spawning extra ones.
+func TestParseGNUDBResponseIssue9(t *testing.T) {
+	f, err := os.Open("testdata/issue9_read.txt")
+	if err != nil {
+		t.Fatalf("opening fixture: %v", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("closing fixture: %v", err)
+		}
+	}()
+
+	info, err := parseGNUDBResponse(f)
+	if err != nil {
+		t.Fatalf("parseGNUDBResponse() error = %v", err)
+	}
+
+	if len(info.Tracks) != 21 {
+		t.Fatalf("got %d tracks, want 21 (wrapped lines must not add tracks):\n%s",
+			len(info.Tracks), strings.Join(info.Tracks, "\n"))
+	}
+
+	// TTITLE19 is wrapped mid-word (`"Th` + `e Biz"`); it must rejoin cleanly.
+	const wantSatisfaction = `Benny Benassi Presents "The Biz" / Benny Benassi Presents "The Biz" - Satisfaction (2003)`
+	if info.Tracks[19] != wantSatisfaction {
+		t.Errorf("track 19 (satisfaction) =\n%q\nwant\n%q", info.Tracks[19], wantSatisfaction)
+	}
+
+	// TTITLE13 is also wrapped across two lines.
+	if got := info.Tracks[13]; !strings.HasPrefix(got, "Jonatan Cerrada / ") || !strings.Contains(got, "T'attends (2003)") {
+		t.Errorf("track 13 not rejoined: %q", got)
+	}
+
+	// Last track confirms nothing shifted.
+	if want := `Diam's / Diam's - Dj (2003)`; info.Tracks[20] != want {
+		t.Errorf("track 20 = %q, want %q", info.Tracks[20], want)
 	}
 }

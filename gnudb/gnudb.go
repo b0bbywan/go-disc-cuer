@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/b0bbywan/go-disc-cuer/config"
@@ -161,6 +162,8 @@ func fetchFullMetadata(client *http.Client, gnuConfig *gnuConfig, gnudbID string
 func parseGNUDBResponse(body io.Reader) (*types.DiscInfo, error) {
 	scanner := bufio.NewScanner(body)
 	discInfo := &types.DiscInfo{}
+	titles := make(map[int]string)
+	maxIndex := -1
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -176,8 +179,16 @@ func parseGNUDBResponse(body io.Reader) (*types.DiscInfo, error) {
 		case strings.HasPrefix(line, keyGenre):
 			discInfo.Genre = strings.TrimPrefix(line, keyGenre)
 		case strings.HasPrefix(line, keyTrack):
-			track := strings.SplitN(line, "=", 2)
-			discInfo.Tracks = append(discInfo.Tracks, track[1])
+			index, value, ok := parseTrackLine(line)
+			if !ok {
+				continue
+			}
+			// GNUDB wraps long titles onto several lines that share the same
+			// TTITLE index; concatenate them instead of emitting extra tracks.
+			titles[index] += value
+			if index > maxIndex {
+				maxIndex = index
+			}
 		}
 	}
 
@@ -189,7 +200,27 @@ func parseGNUDBResponse(body io.Reader) (*types.DiscInfo, error) {
 		return nil, fmt.Errorf("error: no valid title in GNUDB data")
 	}
 
+	discInfo.Tracks = make([]string, maxIndex+1)
+	for i := 0; i <= maxIndex; i++ {
+		discInfo.Tracks[i] = titles[i]
+	}
+
 	return discInfo, nil
+}
+
+// parseTrackLine splits a "TTITLE<n>=value" line into its index and value,
+// reporting false for a line that does not carry a numeric track index.
+func parseTrackLine(line string) (int, string, bool) {
+	rest := strings.TrimPrefix(line, keyTrack)
+	eq := strings.IndexByte(rest, '=')
+	if eq < 1 {
+		return 0, "", false
+	}
+	index, err := strconv.Atoi(rest[:eq])
+	if err != nil {
+		return 0, "", false
+	}
+	return index, rest[eq+1:], true
 }
 
 // makeGnuRequest performs an HTTP GET request with a predefined User-Agent header.

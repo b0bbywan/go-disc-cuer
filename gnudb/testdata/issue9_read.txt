@@ -1,0 +1,84 @@
+210 data 23121886 CD database entry follows (until terminating `.')
+# xmcd
+#
+# Track frame offsets:
+#        150
+#        15947
+#        29333
+#        47188
+#        62249
+#        81995
+#        99079
+#        118776
+#        131854
+#        146350
+#        163525
+#        182410
+#        195995
+#        209445
+#        227574
+#        243154
+#        257085
+#        272920
+#        292952
+#        308907
+#        327349
+#
+# Disc length: 4634 seconds
+#
+# Revision: 6
+# Processed by: gnucddb v1.0.1 Copyright (c) Gnudb.
+# Submitted via: ExactAudioCopy v1.6
+# Artid: ccd261b8-d05d-4ea2-a8b4-a9bdffcb3509
+#
+DISCID=23121815
+DTITLE=Various / NRJ Hits 2003
+DYEAR=2003
+DGENRE=Pop
+TTITLE0=Tragedie / Tragedie - Hey Ho (2003)
+TTITLE1=Lorna / Lorna - Papi Chulo... Te Traigo El Mmmm... (2003)
+TTITLE2=Dido / Dido - White Flag (2003)
+TTITLE3=Blu Cantrell / Blu Cantrell - Breathe (2003)
+TTITLE4=Seal / Seal - Love's Divine (2003)
+TTITLE5=The Underdog Project / The Underdog Project - Summer Jam 2003
+TTITLE6=Madonna / Madonna - Hollywood (2003)
+TTITLE7=Dis L'Heure De Zouk / Dis L'Heure De Zouk - Ma Rivale (2003)
+TTITLE8=Marc Lavoine / Marc Lavoine - Dis Moi Que L'Amour (2003)
+TTITLE9=One-T + Cool-T / One-T + Cool-T - The Magic Key (2003)
+TTITLE10=Phil Collins / Phil Collins - The Least You Can Do (2003)
+TTITLE11=Dj Bobo / Dj Bobo - Chihuahua (2003)
+TTITLE12=Kyo / Kyo - Je Cours (2003)
+TTITLE13=Jonatan Cerrada / Jonatan Cerrada - Je Voulais Te Dire Que Je
+TTITLE13=T'attends (2003)
+TTITLE14=Fifth Ave. / Fifth Ave. - Infidelity (2003)
+TTITLE15=Aventura / Aventura - Obsesion (2003)
+TTITLE16=Sean Paul / Sean Paul - Get Busy (2003)
+TTITLE17=Justin Timberlake / Justin Timberlake - Rock Your Body (2003)
+TTITLE18=Saya / Saya - De L'or Entre Les Mains (2003)
+TTITLE19=Benny Benassi Presents "The Biz" / Benny Benassi Presents "Th
+TTITLE19=e Biz" - Satisfaction (2003)
+TTITLE20=Diam's / Diam's - Dj (2003)
+EXTD=2003
+EXTT0=
+EXTT1=
+EXTT2=
+EXTT3=
+EXTT4=
+EXTT5=
+EXTT6=
+EXTT7=
+EXTT8=
+EXTT9=
+EXTT10=
+EXTT11=
+EXTT12=
+EXTT13=
+EXTT14=
+EXTT15=
+EXTT16=
+EXTT17=
+EXTT18=
+EXTT19=
+EXTT20=
+PLAYORDER=
+.
