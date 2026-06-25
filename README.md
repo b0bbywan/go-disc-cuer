@@ -33,29 +33,45 @@
 
 ## Installation
 
+### From Releases
+Download the prebuilt `linux/amd64` binary attached to the
+[latest release](https://github.com/b0bbywan/go-disc-cuer/releases):
+
+```bash
+curl -L -o disc-cuer \
+  https://github.com/b0bbywan/go-disc-cuer/releases/latest/download/disc-cuer-linux-amd64
+chmod +x disc-cuer
+sudo mv disc-cuer /usr/local/bin/
+```
+
+You still need `libdiscid` installed at runtime (see the dependency step below).
+
 ### From Source
 1. Clone the repository:
     ```bash
     git clone https://github.com/b0bbywan/go-disc-cuer.git
     cd go-disc-cuer
     ```
-2. Install dependencies
+2. Install dependencies (`libdiscid`):
     ```bash
-    # Debian
-    sudo apt install libdiscid0 libdiscid-dev
-    # Fedora
-    sudo dnf install libdiscid libdiscid-devel
+    make deps
+    # or manually:
+    #   Debian:  sudo apt install libdiscid0 libdiscid-dev
+    #   Fedora:  sudo dnf install libdiscid libdiscid-devel
     ```
 
-3. Build the binary:
+3. Build the binary (the version is stamped from `git describe`):
     ```bash
-    go build -o disc-cuer .
+    make build
     ```
 
 4. (Optional) Install globally:
     ```bash
     sudo mv disc-cuer /usr/local/bin/
     ```
+
+Other Makefile targets: `make test` (race + coverage), `make lint`, `make dist`
+(linux/amd64 release binary into `dist/`), `make clean`.
 
 ## Usage
 1. Basic Command
@@ -104,14 +120,43 @@ The tool loads configurations in the following order of priority:
     disc-cuer --disc-id <disc_id> --musicbrainz <release_id> --overwrite
     ```
 
+## Use as a library
+
+`go-disc-cuer` can be embedded in another program (for example
+[go-mpd-discplayer](https://github.com/b0bbywan/go-mpd-discplayer)). Build a
+`*config.Config` with your own app name and version, then drive the flow through
+`cue.New(cfg).Generate(...)`:
+
+```go
+import (
+    "github.com/b0bbywan/go-disc-cuer/config"
+    "github.com/b0bbywan/go-disc-cuer/cue"
+)
+
+// Your app's identity is what the GNUDB hello reports; pass "" to fall back to
+// disc-cuer's own defaults. The third argument overrides the cache base folder.
+cfg, err := config.NewConfig("my-app", "1.2.3", "")
+if err != nil {
+    return err
+}
+
+path, err := cue.New(cfg).Generate(cue.Options{
+    Device:    "/dev/sr0", // read this drive (omit DiscID to read the disc)
+    Overwrite: true,
+})
+```
+
+`Options` also accepts `DiscID` + `MusicBrainzID` to bypass the drive/TOC lookup
+and target a specific release.
+
 ## Project Structure
-- `main/`: Entry point and CLI logic.
-- `cue/`: CUE file generation and related utilities.
-- `discinfo/`: Disc ID and metadata fetching logic.
-- `gnudb/`: GNUDB integration.
-- `musicbrainz/`: MusicBrainz integration.
-- `config`: Configuration package with github.com/spf13/viper.
-- `utils/`: Shared helper functions.
+- `main.go`: Entry point and CLI flag parsing.
+- `cue/`: Flow orchestration (`Generate`), CUE rendering, and cover-art fetching.
+- `gnudb/`: GNUDB (CDDB protocol) integration.
+- `musicbrainz/`: MusicBrainz web-service integration.
+- `config/`: Configuration package built on github.com/spf13/viper.
+- `types/`: Shared `DiscInfo` model and MusicBrainz JSON structs.
+- `utils/`: TOC/disc-id computation and cache-path helpers.
 
 
 ## Contributing
