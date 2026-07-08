@@ -3,9 +3,9 @@ package cue
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -16,131 +16,101 @@ import (
 	"github.com/b0bbywan/go-disc-cuer/utils"
 )
 
-const (
-	coverArtURL = "https://coverartarchive.org/release"
-)
+// coverArtURL is the Cover Art Archive base. It is a var rather than a const so
+// tests can redirect it to a local stub server.
+var coverArtURL = "https://coverartarchive.org/release"
 
-// fetchCoverArtIfNeeded ensures that cover art is available for the given disc.
-// If the cover art is missing, it attempts to fetch it from the Cover Art Archive
-// based on the MusicBrainz ID of the disc and saves it in the appropriate cache folder.
-//
-// Parameters:
-//   - discInfo (*types.DiscInfo): Metadata for the disc, including its MusicBrainz ID and cover art path.
-//   - cueFilePath (string): The path to the CUE file, used to determine the cache directory.
-//
-// Returns:
-//   - error: An error if the cover art cannot be fetched or saved; nil otherwise.
-func fetchCoverArtIfNeeded(discInfo *types.DiscInfo, cacheLocation, cueFilePath string) error {
-	if discInfo.CoverArtPath == "" {
-		coverFilePath := utils.CacheCoverArtPath(cacheLocation, filepath.Base(filepath.Dir(cueFilePath)))
-		if err := fetchCoverArt(discInfo.ID, coverFilePath); err == nil {
-			discInfo.CoverArtPath = coverFilePath
-		} else {
-			return fmt.Errorf("error getting cover: %w", err)
-		}
+// ensureCoverArt downloads the front cover into the cache when info has none.
+// Failures are logged, not fatal: a sheet without cover is still valid.
+func ensureCoverArt(cacheLocation string, info *types.DiscInfo, id string) {
+	if info.CoverArtPath != "" {
+		return
 	}
-	return nil
+	dst := utils.CacheCoverArtPath(cacheLocation, id)
+	if err := fetchCoverArt(info.ID, dst); err != nil {
+		log.Printf("cover art: %v", err)
+		return
+	}
+	info.CoverArtPath = dst
 }
 
-// fetchCoverArt downloads cover art from the Cover Art Archive using a MusicBrainz ID.
-//
-// Parameters:
-//   - mbID (string): The MusicBrainz release ID for the disc.
-//   - coverFile (string): The file path where the cover art will be saved.
-//
-// Returns:
-//   - error: An error if the HTTP request fails, the response status is not OK,
-//     or the file cannot be saved; nil otherwise.
-func fetchCoverArt(mbID, coverFile string) error {
+// fetchCoverArt saves the Cover Art Archive front image for a MusicBrainz id.
+func fetchCoverArt(mbID, dst string) error {
 	url := fmt.Sprintf("%s/%s/front", coverArtURL, mbID)
+	log.Printf("cover art: GET %s", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("cover art: closing response body: %v", err)
+		}
+	}()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("failed to fetch cover art: received status code %d", resp.StatusCode)
+		return fmt.Errorf("status %d", resp.StatusCode)
 	}
 
-	file, err := os.Create(coverFile)
+	file, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("cover art: closing %s: %v", dst, err)
+		}
+	}()
 
 	_, err = io.Copy(file, resp.Body)
 	return err
 }
 
-// fetchDiscInfoConcurrently fetches metadata about a disc from both GNUDB and MusicBrainz concurrently.
-// This function uses goroutines and a WaitGroup to perform the operations in parallel.
-//
-// Parameters:
-//   - gnuToc (string): The disc's TOC formatted for GNUDB queries.
-//   - mbToc (string): The disc's TOC formatted for MusicBrainz queries.
-//
-// Returns:
-//   - *types.DiscInfo: Consolidated metadata about the disc, prioritizing GNUDB data when available.
-//   - error: An error if both sources fail to provide valid data; nil otherwise.
-//
-// Function to fetch disc info from both services using goroutines and WaitGroup
-func fetchDiscInfoConcurrently(cuerConfig *config.Config, gnuToc, mbToc string) (*types.DiscInfo, error) {
+// fetchDiscInfoConcurrently queries GNUDB and MusicBrainz in parallel by TOC.
+func fetchDiscInfoConcurrently(cfg *config.Config, gnuToc, mbToc string) (*types.DiscInfo, error) {
 	var wg sync.WaitGroup
-	var gndbDiscInfo, mbDiscInfo *types.DiscInfo
-	var gndbErr, mbErr error
-	formattedGnuTOC := strings.ReplaceAll(gnuToc, " ", "+")
-	formattedMBTOC := strings.ReplaceAll(mbToc, " ", "+")
+	var gnudbInfo, mbInfo *types.DiscInfo
+	var gnudbErr, mbErr error
 
 	wg.Add(2)
-
-	// Fetch from GNUDB
 	go func() {
 		defer wg.Done()
-		gndbDiscInfo, gndbErr = gnudb.FetchDiscInfo(cuerConfig, formattedGnuTOC)
+		gnudbInfo, gnudbErr = gnudb.FetchDiscInfo(cfg, strings.ReplaceAll(gnuToc, " ", "+"))
 	}()
-
-	// Fetch from MusicBrainz
 	go func() {
 		defer wg.Done()
-		mbDiscInfo, mbErr = musicbrainz.FetchReleaseByToc(formattedMBTOC)
+		mbInfo, mbErr = musicbrainz.FetchReleaseByToc(strings.ReplaceAll(mbToc, " ", "+"))
 	}()
-
-	// Wait for both fetches to complete
 	wg.Wait()
 
-	return selectDiscInfo(gndbDiscInfo, gndbErr, mbDiscInfo, mbErr)
+	return selectDiscInfo(gnudbInfo, gnudbErr, mbInfo, mbErr)
 }
 
-// selectDiscInfo determines the final disc metadata to use based on the results from GNUDB and MusicBrainz.
-//
-// Parameters:
-//   - gndbDiscInfo (*types.DiscInfo): Metadata fetched from GNUDB (if available).
-//   - gndbErr (error): Any error encountered during the GNUDB fetch.
-//   - mbDiscInfo (*types.DiscInfo): Metadata fetched from MusicBrainz (if available).
-//   - mbErr (error): Any error encountered during the MusicBrainz fetch.
-//
-// Returns:
-//   - *types.DiscInfo: The chosen disc metadata, prioritizing GNUDB data when both sources are successful.
-//   - error: An error if both sources fail, containing details about both failures.
-func selectDiscInfo(gndbDiscInfo *types.DiscInfo, gndbErr error, mbDiscInfo *types.DiscInfo, mbErr error) (*types.DiscInfo, error) {
-
-	// Decide on the final discInfo, prioritizing GNUDB data where available
-	finalDiscInfo := &types.DiscInfo{}
-	if gndbErr == nil {
-		*finalDiscInfo = *gndbDiscInfo
-	} else if mbErr == nil {
-		*finalDiscInfo = *mbDiscInfo
+// selectDiscInfo prefers the GNUDB body but always keeps the MusicBrainz id,
+// which the cover art lookup needs. It fails only when both sources fail.
+func selectDiscInfo(gnudbInfo *types.DiscInfo, gnudbErr error, mbInfo *types.DiscInfo, mbErr error) (*types.DiscInfo, error) {
+	// Log each source's outcome: a failure here is non-fatal as long as the
+	// other source succeeds, so it would otherwise be swallowed silently.
+	if gnudbErr != nil {
+		log.Printf("gnudb lookup failed: %v", gnudbErr)
+	}
+	if mbErr != nil {
+		log.Printf("musicbrainz lookup failed: %v", mbErr)
+	}
+	if gnudbErr != nil && mbErr != nil {
+		return nil, fmt.Errorf("gnudb: %w; musicbrainz: %w", gnudbErr, mbErr)
 	}
 
-	// Use MusicBrainz ID regardless of source priority
-	if mbDiscInfo != nil {
-		finalDiscInfo.ID = mbDiscInfo.ID
+	info := &types.DiscInfo{}
+	switch {
+	case gnudbErr == nil:
+		log.Printf("metadata source: gnudb")
+		*info = *gnudbInfo
+	case mbErr == nil:
+		log.Printf("metadata source: musicbrainz")
+		*info = *mbInfo
 	}
-
-	// If both failed, return an error
-	if gndbErr != nil && mbErr != nil {
-		return nil, fmt.Errorf("failed to fetch from both sources: GNUDB error: %w; MusicBrainz error: %w", gndbErr, mbErr)
+	if mbErr == nil {
+		info.ID = mbInfo.ID
 	}
-
-	return finalDiscInfo, nil
+	return info, nil
 }

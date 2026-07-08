@@ -9,10 +9,18 @@ import (
 	"github.com/spf13/viper"
 )
 
-const (
-	AppName    = "disc-cuer"
-	AppVersion = "0.3"
-)
+// AppName is the standalone binary's fixed identity.
+const AppName = "disc-cuer"
+
+// AppVersion is the standalone binary's version. It is a var, not a const, so a
+// release build can stamp it through the linker:
+//
+//	go build -ldflags "-X github.com/b0bbywan/go-disc-cuer/config.AppVersion=$(git describe --tags)"
+//
+// Library consumers do not touch this: they pass their own name and version to
+// NewConfig, and that identity is what the GNUDB hello reports. The default
+// "dev" placeholder marks an unstamped local build.
+var AppVersion = "dev"
 
 type Config struct {
 	AppName       string

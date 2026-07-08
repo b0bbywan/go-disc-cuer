@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/b0bbywan/go-disc-cuer/types"
 )
 
-const (
-	mbURL = "https://musicbrainz.org/ws/2"
-)
+// mbURL is the MusicBrainz web service base. It is a var rather than a const so
+// tests can redirect it to a local stub server.
+var mbURL = "https://musicbrainz.org/ws/2"
 
 // FetchReleaseByID fetches a MusicBrainz release's information based on its release ID.
 //
@@ -63,6 +64,13 @@ func FetchReleaseByToc(mbToc string) (*types.DiscInfo, error) {
 //   - *types.DiscInfo: A struct with the converted disc information (artist, title, release date, tracks).
 //   - error: An error if any data is missing or cannot be converted.
 func convertReleaseToDiscInfo(release types.MBRelease) (*types.DiscInfo, error) {
+	if len(release.Media) == 0 {
+		return nil, fmt.Errorf("release %s has no media", release.ID)
+	}
+	if len(release.ArtistCredit) == 0 {
+		return nil, fmt.Errorf("release %s has no artist credit", release.ID)
+	}
+
 	tracks := make([]string, len(release.Media[0].Tracks))
 	for i, track := range release.Media[0].Tracks {
 		tracks[i] = track.Title
@@ -86,11 +94,16 @@ func convertReleaseToDiscInfo(release types.MBRelease) (*types.DiscInfo, error) 
 // Returns:
 //   - error: An error if the request fails or if the response cannot be parsed.
 func fetchJSON(url string, target interface{}) error {
+	log.Printf("musicbrainz: GET %s", url)
 	resp, err := http.Get(url)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("musicbrainz: closing response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("error: failed to fetch from URL %s, status code: %d", url, resp.StatusCode)

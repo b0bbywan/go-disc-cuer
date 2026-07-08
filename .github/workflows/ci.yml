@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # full history + tags so `make build` stamps a real version
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version: '1.23'
+          cache: true
+      - name: Install libdiscid
+        run: make deps
+      - name: Build
+        run: make build
+      - name: Test
+        run: make test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6.5.0
+        with:
+          go-version: '1.23'
+          cache: true
+      - name: Install libdiscid
+        run: make deps
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2

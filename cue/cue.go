@@ -1,10 +1,11 @@
 package cue
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
+	"strings"
 
 	"go.uploadedlobster.com/discid"
 
@@ -14,217 +15,171 @@ import (
 	"github.com/b0bbywan/go-disc-cuer/utils"
 )
 
-// GenerateFromDefaultDisc generates a CUE file for the currently inserted audio CD
-// using the default behavior. It does not rely on any pre-provided disc ID or
-// MusicBrainz release ID. This function assumes a disc is present and accessible
-// in the drive. Use Device from config (defaut to "/dev/sr0")
-//
-// Parameters:
-//   - cuerConfig: The Config instance to use for generating the CUE file.
-//
-// Returns:
-//   - string: The path to the generated CUE file, or an existing file.
-//   - error: Any error encountered during the process, such as failure to read the disc or generate the file.
-func GenerateFromDefaultDisc(cuerConfig *config.Config) (string, error) {
-	return generate(cuerConfig.Device, cuerConfig, "", "", false)
+// Options controls a single CUE generation.
+type Options struct {
+	Device        string // drive to read when no DiscID is supplied
+	DiscID        string // FreeDB disc id, requires MusicBrainzID
+	MusicBrainzID string // release id, bypasses the TOC lookup
+	Overwrite     bool   // regenerate even if a cached sheet exists
 }
 
-// GenerateFromDefaultDisc generates a CUE file for the currently inserted audio CD
-// using the default behavior. It does not rely on any pre-provided disc ID or
-// MusicBrainz release ID. This function assumes a disc is present and accessible
-// in the given drive.
-//
-// Parameters:
-//   - device: The path to the disc drive (e.g., "/dev/sr0").
-//   - cuerConfig: The Config instance to use for generating the CUE file.
-//
-// Returns:
-//   - string: The path to the generated CUE file, or an existing file.
-//   - error: Any error encountered during the process, such as failure to read the disc or generate the file.
-func GenerateDefaultFromDisc(device string, cuerConfig *config.Config) (string, error) {
-	return generate(device, cuerConfig, "", "", false)
-}
-
-// GenerateWithOptions generates a CUE file with additional options, allowing the user
-// to specify a disc ID or a MusicBrainz release ID, and control whether to overwrite
-// existing CUE files.
-//
-// Parameters:
-//   - device (string): The path to the CD-ROM device.
-//   - cuerConfig: The Config instance to use for generating the CUE file.
-//   - providedDiscID (string): A user-supplied disc ID to bypass detection. If empty,
-//     the disc ID is determined automatically.
-//   - musicbrainzID (string): A MusicBrainz release ID for fetching metadata. If empty,
-//     GNUDB is used as the fallback metadata source.
-//   - overwrite (bool): If true, forces regeneration of the CUE file even if it already exists.
-//
-// Returns:
-//   - string: The path to the generated, or an existing file if overwrite is not set.
-//   - error: Any error encountered during the process, such as metadata fetch or file write failure.
-func GenerateWithOptions(device string, cuerConfig *config.Config, providedDiscID, musicbrainzID string, overwrite bool) (string, error) {
-	return generate(device, cuerConfig, providedDiscID, musicbrainzID, overwrite)
-}
-
-// generate is the core function responsible for creating a CUE file. It handles
-// disc ID calculation, metadata retrieval, and file creation or update.
-//
-// Parameters:
-//   - device (string): The path to the CD-ROM device.
-//   - cuerConfig: The Config instance to use for generating the CUE file.
-//   - providedDiscID (string): A user-supplied disc ID (optional).
-//   - musicbrainzID (string): A MusicBrainz release ID for metadata (optional).
-//   - overwrite (bool): Whether to overwrite an existing CUE file.
-//
-// Returns:
-//   - string: The path to the generated or updated CUE file.
-//   - error: Any error encountered during the process.
-//
-// Workflow:
-//  1. If a `providedDiscID` or `musicbrainzID` is provided, fetch corresponding disc info.
-//  2. If `discID` is not determined, read the disc from the drive and compute its ID and TOC.
-//  3. Check if a cached CUE file exists. If so, return it unless `overwrite` is true.
-//  4. If `discInfo` and `discID` are both valid, finalize the CUE file generation.
-//  5. If necessary, fetch metadata concurrently from GNUDB and MusicBrainz.
-//  6. Ensure necessary directories exist, then create and save the CUE file.
-//
-// Notes:
-// - This function is used internally by both `GenerateFromDisc` and `GenerateWithOptions`.
-// - Fetching metadata from GNUDB and MusicBrainz occurs concurrently to improve efficiency.
-//
-// Returns:
-//   - string: The path to the generated CUE file.
-//   - error: Any error encountered during the operation.
-func generate(device string, cuerConfig *config.Config, providedDiscID, musicbrainzID string, overwrite bool) (string, error) {
-	if cuerConfig == nil {
-		return "", fmt.Errorf("Failed to generate cue file: empty config")
+func (o Options) validate() error {
+	if o.DiscID != "" && o.MusicBrainzID == "" {
+		return errors.New("disc id requires a musicbrainz id")
 	}
-	discInfo, discID, err := fetchDiscInfoFromFlags(providedDiscID, musicbrainzID)
-	if err != nil {
+	return nil
+}
+
+// discData is what a single drive read yields.
+type discData struct {
+	id     string
+	gnuToc string
+	mbToc  string
+}
+
+// readableDisc is a disc the flow can read TOCs from and then release.
+type readableDisc interface {
+	utils.Disc
+	Close()
+}
+
+// Generator writes CUE sheets for audio discs. Its hardware (drive) and network
+// (metadata) dependencies are injected at construction via Option, so tests can
+// run without a drive or network. Create one with New.
+type Generator struct {
+	cfg      *config.Config
+	openDisc func(device string) (readableDisc, error)
+	resolve  func(opts Options, disc discData) (*types.DiscInfo, error)
+}
+
+// Option customises a Generator. The injection points exist mainly for testing;
+// production code uses New's defaults (read the physical drive, query the network).
+type Option func(*Generator)
+
+// New returns a Generator that reads the physical drive via discid.Read and
+// resolves metadata from GNUDB/MusicBrainz. Options override those defaults.
+func New(cfg *config.Config, opts ...Option) *Generator {
+	g := &Generator{
+		cfg: cfg,
+		openDisc: func(device string) (readableDisc, error) {
+			return discid.Read(device)
+		},
+	}
+	g.resolve = func(opts Options, disc discData) (*types.DiscInfo, error) {
+		return resolveInfo(g.cfg, opts, disc)
+	}
+	for _, opt := range opts {
+		opt(g)
+	}
+	return g
+}
+
+// Generate resolves disc metadata and writes a CUE sheet to the cache, returning
+// its path. A cached sheet is reused unless Overwrite is set. Metadata comes from
+// MusicBrainzID when given, otherwise from a concurrent GNUDB/MusicBrainz lookup by
+// TOC. The drive is read only when no DiscID is supplied.
+func (g *Generator) Generate(opts Options) (string, error) {
+	if g.cfg == nil {
+		return "", errors.New("nil config")
+	}
+	if err := opts.validate(); err != nil {
 		return "", err
 	}
 
-	var disc discid.Disc
-	var gnuToc string
-	if discID == "" {
-		disc, err = discid.Read(device)
-		if err != nil {
-			return "", err
-		}
-		defer disc.Close()
-		if gnuToc, discID, err = utils.GetTocAndDiscID(disc); err != nil {
+	disc := discData{id: opts.DiscID}
+	if disc.id == "" {
+		var err error
+		if disc, err = g.readDisc(opts.Device); err != nil {
 			return "", err
 		}
 	}
-	cacheLocation := cuerConfig.GetCacheLocation()
-	cueFilePath := utils.CachePlaylistPath(cacheLocation, discID)
 
-	if utils.CheckIfPlaylistExists(cueFilePath) && !overwrite {
-		return cueFilePath, nil
+	path := utils.CachePlaylistPath(g.cfg.GetCacheLocation(), disc.id)
+	if !opts.Overwrite && utils.CheckIfPlaylistExists(path) {
+		return path, nil
 	}
 
-	if discInfo != nil && discID != "" {
-		return finalizeIfSuccess(discInfo, cacheLocation, cueFilePath)
-	}
-	var mbToc string
-	if mbToc, err = utils.GetMusicBrainzTOC(disc); err != nil {
-		return "", fmt.Errorf("Failed to get musicbrainz TOC: %w", err)
-	}
-
-	if err = utils.CreateFolderIfNeeded(cueFilePath); err != nil {
-		return "", fmt.Errorf("Failed to create %s folder: %w", cueFilePath, err)
-	}
-
-	// Fetch DiscInfo concurrently
-	if discInfo, err = fetchDiscInfoConcurrently(cuerConfig, gnuToc, mbToc); err != nil {
-		return "", fmt.Errorf("Failed to get disc metadata: %w", err)
-	}
-
-	return finalizeIfSuccess(discInfo, cacheLocation, cueFilePath)
-}
-
-// fetchDiscInfoFromFlags returns DiscInfo, disc ID, and an error based on provided options.
-func fetchDiscInfoFromFlags(musicbrainzID, providedDiscID string) (*types.DiscInfo, string, error) {
-	// Enforce --musicbrainz with --disc-id
-	if providedDiscID != "" && musicbrainzID == "" {
-		return nil, "", fmt.Errorf("error: --disc-id option requires --musicbrainz to be set")
-	}
-
-	// If --musicbrainz is provided, fetch DiscInfo directly from MusicBrainz
-	if musicbrainzID != "" {
-		discInfo, err := musicbrainz.FetchReleaseByID(musicbrainzID)
-		if err != nil {
-			return nil, "", fmt.Errorf("Failed to get MusicBrainz %s Release: %w", musicbrainzID, err)
-		}
-		return discInfo, providedDiscID, nil
-	}
-	return nil, "", nil
-}
-
-// finalizeIfSuccess finalizes the creation of a CUE file and saves associated metadata.
-//
-// Parameters:
-//   - discInfo: Metadata about the disc to include in the CUE file.
-//   - cacheLocation: The cache directory path.
-//   - cueFilePath: The path to save the CUE file.
-//
-// Returns:
-//   - string: The path to the finalized CUE file.
-//   - error: Any error encountered during the operation.
-func finalizeIfSuccess(discInfo *types.DiscInfo, cacheLocation, cueFilePath string) (string, error) {
-	if err := fetchCoverArtIfNeeded(discInfo, cacheLocation, cueFilePath); err != nil {
-		log.Printf("Error fetching cover art: %v", err)
-	}
-	// Generate the CUE file and save
-	if err := generateCueFile(discInfo, cacheLocation, cueFilePath); err != nil {
-		return "", fmt.Errorf("Failed To Generate cue file %s: %w", cueFilePath, err)
-	}
-	log.Printf("info: Playlist generated at %s", cueFilePath)
-	return cueFilePath, nil
-}
-
-// generateCueFile generates and writes a CUE file based on disc metadata.
-//
-// Parameters:
-//   - info: Metadata about the disc.
-//   - cacheLocation: The cache directory path.
-//   - cueFilePath: The path to save the CUE file.
-//
-// Returns:
-//   - error: Any error encountered during file creation.
-func generateCueFile(info *types.DiscInfo, cacheLocation, cueFilePath string) error {
-	file, err := os.Create(cueFilePath)
+	info, err := g.resolve(opts, disc)
 	if err != nil {
-		return fmt.Errorf("Failed to create cue file %s: %w", cueFilePath, err)
+		return "", err
 	}
-	defer file.Close()
+	return write(g.cfg.GetCacheLocation(), info, disc.id, path)
+}
 
-	if info.CoverArtPath == "" {
-		discID := filepath.Base(filepath.Dir(cueFilePath))
-		coverFilePath := utils.CacheCoverArtPath(cacheLocation, discID)
-		if err := fetchCoverArt(info.ID, coverFilePath); err == nil {
-			info.CoverArtPath = coverFilePath
-		} else {
-			log.Printf("error getting cover: %v", err)
+// readDisc reads the drive once and computes the cache id and both TOCs.
+func (g *Generator) readDisc(device string) (discData, error) {
+	disc, err := g.openDisc(device)
+	if err != nil {
+		return discData{}, err
+	}
+	defer disc.Close()
+
+	gnuToc, id, err := utils.GetTocAndDiscID(disc)
+	if err != nil {
+		return discData{}, err
+	}
+	mbToc, err := utils.GetMusicBrainzTOC(disc)
+	if err != nil {
+		return discData{}, fmt.Errorf("get musicbrainz toc: %w", err)
+	}
+	return discData{id: id, gnuToc: gnuToc, mbToc: mbToc}, nil
+}
+
+// resolveInfo returns metadata from MusicBrainzID when set, else from a TOC lookup.
+func resolveInfo(cfg *config.Config, opts Options, disc discData) (*types.DiscInfo, error) {
+	if opts.MusicBrainzID != "" {
+		info, err := musicbrainz.FetchReleaseByID(opts.MusicBrainzID)
+		if err != nil {
+			return nil, fmt.Errorf("fetch musicbrainz release %s: %w", opts.MusicBrainzID, err)
 		}
+		return info, nil
 	}
+	info, err := fetchDiscInfoConcurrently(cfg, disc.gnuToc, disc.mbToc)
+	if err != nil {
+		return nil, fmt.Errorf("fetch disc metadata: %w", err)
+	}
+	return info, nil
+}
 
-	var content string
+// write fetches cover art if missing, renders the sheet and persists it.
+func write(cacheLocation string, info *types.DiscInfo, id, path string) (string, error) {
+	if err := utils.CreateFolderIfNeeded(path); err != nil {
+		return "", fmt.Errorf("create cache dir for %s: %w", path, err)
+	}
+	ensureCoverArt(cacheLocation, info, id)
+	if err := os.WriteFile(path, renderCue(info), 0o644); err != nil {
+		return "", fmt.Errorf("write cue %s: %w", path, err)
+	}
+	log.Printf("playlist generated at %s", path)
+	return path, nil
+}
+
+// withDiscOpener injects a drive opener, letting tests parse a disc from a TOC
+// string (discid.Parse) instead of reading physical hardware.
+func withDiscOpener(fn func(device string) (readableDisc, error)) Option {
+	return func(g *Generator) { g.openDisc = fn }
+}
+
+// withResolver injects a metadata source, letting tests bypass the network.
+func withResolver(fn func(opts Options, disc discData) (*types.DiscInfo, error)) Option {
+	return func(g *Generator) { g.resolve = fn }
+}
+
+// renderCue builds the CUE sheet body. Pure: no I/O, no network.
+func renderCue(info *types.DiscInfo) []byte {
+	var b strings.Builder
 	if info.ReleaseDate != "" {
-		content += fmt.Sprintf("REM DATE \"%s\"\n", info.ReleaseDate)
+		fmt.Fprintf(&b, "REM DATE \"%s\"\n", info.ReleaseDate)
 	}
 	if info.Genre != "" {
-		content += fmt.Sprintf("REM GENRE \"%s\"\n", info.Genre)
+		fmt.Fprintf(&b, "REM GENRE \"%s\"\n", info.Genre)
 	}
 	if info.CoverArtPath != "" {
-		content += fmt.Sprintf("REM COVER \"%s\"\n", info.CoverArtPath)
+		fmt.Fprintf(&b, "REM COVER \"%s\"\n", info.CoverArtPath)
 	}
-	content += fmt.Sprintf("PERFORMER \"%s\"\nTITLE \"%s\"\n", info.Artist, info.Title)
-
+	fmt.Fprintf(&b, "PERFORMER \"%s\"\nTITLE \"%s\"\n", info.Artist, info.Title)
 	for i, track := range info.Tracks {
-		content += fmt.Sprintf("FILE \"cdda:///%d\" WAVE\n  TRACK %02d AUDIO\n    TITLE \"%s\"\n",
-			i+1, i+1, track)
+		fmt.Fprintf(&b, "FILE \"cdda:///%d\" WAVE\n  TRACK %02d AUDIO\n    TITLE \"%s\"\n", i+1, i+1, track)
 	}
-
-	_, err = file.WriteString(content)
-	return err
+	return []byte(b.String())
 }

@@ -6,7 +6,20 @@ import (
 	"strings"
 
 	"go.uploadedlobster.com/discid"
+	"go.uploadedlobster.com/mbtypes"
 )
+
+// Disc is the subset of *discid.Disc the TOC helpers depend on. Depending on the
+// interface rather than the concrete type lets callers pass a disc read from a
+// drive (discid.Read) or one parsed from a TOC string (discid.Parse) in tests,
+// without a physical drive.
+type Disc interface {
+	FreedbID() string
+	LastTrackNumber() int
+	Track(number int) (discid.Track, error)
+	Duration() mbtypes.Duration
+	TOCString() string
+}
 
 // GetTocAndDiscID takes a disc object and returns the corresponding GNU TOC string, MusicBrainz disc ID, and any errors encountered.
 //
@@ -17,7 +30,10 @@ import (
 //   - gnuToc (string): The generated GNU TOC string for the disc.
 //   - discID (string): The FreeDB ID for the disc.
 //   - error: Any error encountered during the process.
-func GetTocAndDiscID(disc discid.Disc) (string, string, error) {
+func GetTocAndDiscID(disc Disc) (string, string, error) {
+	if disc == nil {
+		return "", "", fmt.Errorf("no disc provided")
+	}
 	gnuToc, err := tocToGnu(disc)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to generate GNU TOC: %w", err)
@@ -36,7 +52,10 @@ func GetTocAndDiscID(disc discid.Disc) (string, string, error) {
 // Returns:
 //   - mbToc (string): The MusicBrainz TOC string for the disc.
 //   - error: Any error encountered during the process.
-func GetMusicBrainzTOC(disc discid.Disc) (string, error) {
+func GetMusicBrainzTOC(disc Disc) (string, error) {
+	if disc == nil {
+		return "", fmt.Errorf("no disc provided")
+	}
 	mbToc := disc.TOCString()
 	log.Printf("MusicBrainz TOC: %s", mbToc)
 	return mbToc, nil
@@ -50,7 +69,10 @@ func GetMusicBrainzTOC(disc discid.Disc) (string, error) {
 // Returns:
 //   - gnuToc (string): The generated GNU TOC string.
 //   - error: Any error encountered during the process.
-func tocToGnu(disc discid.Disc) (string, error) {
+func tocToGnu(disc Disc) (string, error) {
+	if disc == nil {
+		return "", fmt.Errorf("no disc provided")
+	}
 	// Get FreeDB ID
 	freedbID := disc.FreedbID()
 	// Get the number of tracks
