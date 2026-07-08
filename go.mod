@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/spf13/viper v1.21.0
-	go.uploadedlobster.com/discid v0.9.0
+	go.uploadedlobster.com/discid v0.10.0
 	go.uploadedlobster.com/mbtypes v0.4.0
 )
 
