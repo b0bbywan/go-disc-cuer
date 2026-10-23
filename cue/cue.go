@@ -74,36 +74,60 @@ func New(cfg *config.Config, opts ...Option) *Generator {
 	return g
 }
 
-// Generate resolves disc metadata and writes a CUE sheet to the cache, returning
-// its path. A cached sheet is reused unless Overwrite is set. Metadata comes from
-// MusicBrainzID when given, otherwise from a concurrent GNUDB/MusicBrainz lookup by
-// TOC. The drive is read only when no DiscID is supplied.
-func (g *Generator) Generate(opts Options) (string, error) {
+// Result describes the outcome of a Resolve call.
+type Result struct {
+	ID      string          // FreeDB disc id, also the cache directory name
+	CuePath string          // path of the CUE sheet in the cache
+	Info    *types.DiscInfo // resolved metadata; nil when the cached sheet was reused
+}
+
+// Resolve resolves disc metadata and writes a CUE sheet to the cache. A cached
+// sheet is reused unless Overwrite is set; in that case no network call is made
+// and Result.Info is nil. Metadata comes from MusicBrainzID when given, otherwise
+// from a concurrent GNUDB/MusicBrainz lookup by TOC. The drive is read only when
+// no DiscID is supplied.
+func (g *Generator) Resolve(opts Options) (*Result, error) {
 	if g.cfg == nil {
-		return "", errors.New("nil config")
+		return nil, errors.New("nil config")
 	}
 	if err := opts.validate(); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	disc := discData{id: opts.DiscID}
 	if disc.id == "" {
 		var err error
 		if disc, err = g.readDisc(opts.Device); err != nil {
-			return "", err
+			return nil, err
 		}
 	}
 
-	path := utils.CachePlaylistPath(g.cfg.GetCacheLocation(), disc.id)
-	if !opts.Overwrite && utils.CheckIfPlaylistExists(path) {
-		return path, nil
+	res := &Result{
+		ID:      disc.id,
+		CuePath: utils.CachePlaylistPath(g.cfg.GetCacheLocation(), disc.id),
+	}
+	if !opts.Overwrite && utils.CheckIfPlaylistExists(res.CuePath) {
+		return res, nil
 	}
 
 	info, err := g.resolve(opts, disc)
 	if err != nil {
+		return nil, err
+	}
+	if _, err := write(g.cfg.GetCacheLocation(), info, disc.id, res.CuePath); err != nil {
+		return nil, err
+	}
+	res.Info = info
+	return res, nil
+}
+
+// Generate is Resolve returning only the CUE sheet path.
+func (g *Generator) Generate(opts Options) (string, error) {
+	res, err := g.Resolve(opts)
+	if err != nil {
 		return "", err
 	}
-	return write(g.cfg.GetCacheLocation(), info, disc.id, path)
+	return res.CuePath, nil
 }
 
 // readDisc reads the drive once and computes the cache id and both TOCs.
