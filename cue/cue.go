@@ -78,14 +78,14 @@ func New(cfg *config.Config, opts ...Option) *Generator {
 type Result struct {
 	ID      string          // FreeDB disc id, also the cache directory name
 	CuePath string          // path of the CUE sheet in the cache
-	Info    *types.DiscInfo // resolved metadata; nil when the cached sheet was reused
+	Info    *types.DiscInfo // metadata, read back from the sheet when it was cached
 }
 
 // Resolve resolves disc metadata and writes a CUE sheet to the cache. A cached
 // sheet is reused unless Overwrite is set; in that case no network call is made
-// and Result.Info is nil. Metadata comes from MusicBrainzID when given, otherwise
-// from a concurrent GNUDB/MusicBrainz lookup by TOC. The drive is read only when
-// no DiscID is supplied.
+// and Result.Info is read back from the sheet. Metadata comes from MusicBrainzID
+// when given, otherwise from a concurrent GNUDB/MusicBrainz lookup by TOC. The
+// drive is read only when no DiscID is supplied.
 func (g *Generator) Resolve(opts Options) (*Result, error) {
 	if g.cfg == nil {
 		return nil, errors.New("nil config")
@@ -107,6 +107,11 @@ func (g *Generator) Resolve(opts Options) (*Result, error) {
 		CuePath: utils.CachePlaylistPath(g.cfg.GetCacheLocation(), disc.id),
 	}
 	if !opts.Overwrite && utils.CheckIfPlaylistExists(res.CuePath) {
+		info, err := Read(res.CuePath)
+		if err != nil {
+			return nil, err
+		}
+		res.Info = info
 		return res, nil
 	}
 

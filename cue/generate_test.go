@@ -3,6 +3,7 @@ package cue
 import (
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -147,15 +148,24 @@ func TestResolveResult(t *testing.T) {
 		t.Errorf("Result.Info = %+v, want %+v", res.Info, want)
 	}
 
-	// A cache hit keeps ID and CuePath but carries no metadata.
+	// A cache hit keeps ID and CuePath and reads the metadata back from the
+	// sheet, without resolving again.
+	resolved := 0
+	g = New(cfg, parsedDiscOpener(issue9MBTOC), withResolver(func(_ Options, _ discData) (*types.DiscInfo, error) {
+		resolved++
+		return want, nil
+	}))
 	cached, err := g.Resolve(Options{})
 	if err != nil {
 		t.Fatalf("cached Resolve() error = %v", err)
 	}
+	if resolved != 0 {
+		t.Errorf("resolver called %d times on a cache hit, want 0", resolved)
+	}
 	if cached.ID != res.ID || cached.CuePath != res.CuePath {
 		t.Errorf("cached Result = %+v, want ID/CuePath of %+v", cached, res)
 	}
-	if cached.Info != nil {
-		t.Errorf("cached Result.Info = %+v, want nil", cached.Info)
+	if !reflect.DeepEqual(cached.Info, want) {
+		t.Errorf("cached Result.Info = %+v, want %+v", cached.Info, want)
 	}
 }
