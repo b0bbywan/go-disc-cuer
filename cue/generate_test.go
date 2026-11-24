@@ -3,6 +3,7 @@ package cue
 import (
 	"errors"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -120,5 +121,51 @@ func TestGenerateOpenDiscError(t *testing.T) {
 
 	if _, err := g.Generate(Options{}); err == nil {
 		t.Fatal("expected error when the drive cannot be opened, got nil")
+	}
+}
+
+func TestResolveResult(t *testing.T) {
+	t.Parallel()
+	cache := t.TempDir()
+	cfg := &config.Config{CacheLocation: cache}
+
+	want := &types.DiscInfo{Artist: "A", Title: "T", Tracks: []string{"x"}, CoverArtPath: "/c.jpg"}
+	g := New(cfg, parsedDiscOpener(issue9MBTOC), withResolver(func(_ Options, _ discData) (*types.DiscInfo, error) {
+		return want, nil
+	}))
+
+	res, err := g.Resolve(Options{})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if res.ID != issue9DiscID {
+		t.Errorf("Result.ID = %q, want %q", res.ID, issue9DiscID)
+	}
+	if wantPath := utils.CachePlaylistPath(cache, issue9DiscID); res.CuePath != wantPath {
+		t.Errorf("Result.CuePath = %q, want %q", res.CuePath, wantPath)
+	}
+	if res.Info != want {
+		t.Errorf("Result.Info = %+v, want %+v", res.Info, want)
+	}
+
+	// A cache hit keeps ID and CuePath and reads the metadata back from the
+	// sheet, without resolving again.
+	resolved := 0
+	g = New(cfg, parsedDiscOpener(issue9MBTOC), withResolver(func(_ Options, _ discData) (*types.DiscInfo, error) {
+		resolved++
+		return want, nil
+	}))
+	cached, err := g.Resolve(Options{})
+	if err != nil {
+		t.Fatalf("cached Resolve() error = %v", err)
+	}
+	if resolved != 0 {
+		t.Errorf("resolver called %d times on a cache hit, want 0", resolved)
+	}
+	if cached.ID != res.ID || cached.CuePath != res.CuePath {
+		t.Errorf("cached Result = %+v, want ID/CuePath of %+v", cached, res)
+	}
+	if !reflect.DeepEqual(cached.Info, want) {
+		t.Errorf("cached Result.Info = %+v, want %+v", cached.Info, want)
 	}
 }
